@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fokusgarten</title>
+  <meta name="description" content="Fokus-Timer mit Pausen, der dich mit Münzen belohnt – damit wächst dein eigener Garten.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">🌱</span>
+      <span class="brand-name">Fokusgarten</span>
+    </div>
+    <div class="topbar-right">
+      <div class="coins" title="Deine Münzen" aria-live="polite">
+        <span class="coin-icon" aria-hidden="true">🪙</span>
+        <span id="coinCount">0</span>
+      </div>
+      <button class="icon-btn" id="settingsBtn" aria-label="Einstellungen" title="Einstellungen">⚙️</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Timer -->
+    <section class="card timer-card" aria-labelledby="timerHeading">
+      <h2 id="timerHeading" class="visually-hidden">Timer</h2>
+      <div class="mode-tabs" role="tablist" aria-label="Modus">
+        <button role="tab" class="mode-tab" data-mode="focus">Fokus</button>
+        <button role="tab" class="mode-tab" data-mode="short">Kurze Pause</button>
+        <button role="tab" class="mode-tab" data-mode="long">Lange Pause</button>
+      </div>
+
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 220 220" aria-hidden="true">
+          <circle class="ring-track" cx="110" cy="110" r="96"/>
+          <circle class="ring-progress" id="ringProgress" cx="110" cy="110" r="96"/>
+        </svg>
+        <div class="ring-center">
+          <div class="time" id="timeDisplay" aria-live="off">25:00</div>
+          <div class="mode-label" id="modeLabel">Fokuszeit</div>
+        </div>
+      </div>
+
+      <div class="cycle-dots" id="cycleDots" aria-label="Fortschritt bis zur langen Pause"></div>
+
+      <div class="timer-controls">
+        <button class="btn btn-ghost btn-round" id="resetBtn" title="Zurücksetzen" aria-label="Zurücksetzen">↺</button>
+        <button class="btn btn-primary btn-big" id="startBtn">Start</button>
+        <button class="btn btn-ghost btn-round" id="skipBtn" title="Phase überspringen" aria-label="Phase überspringen">⏭</button>
+      </div>
+
+      <p class="timer-hint" id="timerHint"></p>
+    </section>
+
+    <!-- Statistik -->
+    <section class="card stats-card" aria-labelledby="statsHeading">
+      <h2 id="statsHeading">Deine Woche</h2>
+      <div class="stat-row">
+        <div class="stat"><span class="stat-value" id="statToday">0</span><span class="stat-label">Min. heute</span></div>
+        <div class="stat"><span class="stat-value" id="statSessions">0</span><span class="stat-label">Fokuseinheiten</span></div>
+        <div class="stat"><span class="stat-value" id="statStreak">0</span><span class="stat-label">Tage in Folge</span></div>
+      </div>
+      <div class="week-chart" id="weekChart" aria-label="Fokusminuten der letzten 7 Tage"></div>
+    </section>
+
+    <!-- Garten -->
+    <section class="card garden-card" aria-labelledby="gardenHeading">
+      <div class="card-head">
+        <h2 id="gardenHeading">Dein Garten</h2>
+        <span class="muted small" id="gardenSummary"></span>
+      </div>
+      <div class="garden" id="garden"></div>
+    </section>
+
+    <!-- Sammlung -->
+    <section class="card collection-card" aria-labelledby="collectionHeading">
+      <div class="card-head">
+        <h2 id="collectionHeading">Sammlung</h2>
+        <span class="muted small" id="collectionCount"></span>
+      </div>
+      <div class="collection" id="collection"></div>
+    </section>
+  </main>
+
+  <!-- Samen-Shop -->
+  <dialog id="shopDialog" class="dialog">
+    <form method="dialog" class="dialog-inner">
+      <div class="dialog-head">
+        <h2>Samen kaufen</h2>
+        <button class="icon-btn" value="cancel" aria-label="Schließen">✕</button>
+      </div>
+      <p class="muted">Wähle eine Pflanze für dein Beet.</p>
+      <div class="shop-list" id="shopList"></div>
+    </form>
+  </dialog>
+
+  <!-- Einstellungen -->
+  <dialog id="settingsDialog" class="dialog">
+    <form method="dialog" class="dialog-inner" id="settingsForm">
+      <div class="dialog-head">
+        <h2>Einstellungen</h2>
+        <button class="icon-btn" value="cancel" aria-label="Schließen">✕</button>
+      </div>
+
+      <fieldset>
+        <legend>Zeiten (Minuten)</legend>
+        <div class="field-grid">
+          <label>Fokus <input type="number" name="focus" min="1" max="120" required></label>
+          <label>Kurze Pause <input type="number" name="short" min="1" max="60" required></label>
+          <label>Lange Pause <input type="number" name="long" min="1" max="90" required></label>
+          <label>Lange Pause nach <input type="number" name="longEvery" min="2" max="10" required> <span class="muted small">Einheiten</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Verhalten</legend>
+        <label class="check"><input type="checkbox" name="autoStart"> Nächste Phase automatisch starten</label>
+        <label class="check"><input type="checkbox" name="sound"> Ton am Ende einer Phase</label>
+        <label class="check"><input type="checkbox" name="notify"> Desktop-Benachrichtigung</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Spielstand</legend>
+        <p class="muted small">Dein Spielstand wird automatisch im Browser gespeichert. Für eine Sicherung oder einen Gerätewechsel kannst du ihn als Datei exportieren.</p>
+        <div class="row-buttons">
+          <button type="button" class="btn btn-ghost" id="exportBtn">⬇ Exportieren</button>
+          <button type="button" class="btn btn-ghost" id="importBtn">⬆ Importieren</button>
+          <button type="button" class="btn btn-danger" id="resetAllBtn">Alles zurücksetzen</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </fieldset>
+
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" value="cancel">Abbrechen</button>
+        <button class="btn btn-primary" value="save" id="saveSettingsBtn">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="js/plants.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
