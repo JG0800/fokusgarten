@@ -2,7 +2,7 @@
  * Strategie: zuerst Netzwerk (damit Updates sofort ankommen), bei Funkloch der Cache.
  * Nur eigene Dateien werden zwischengespeichert – Anfragen an GitHub (Sync) nie.
  */
-const CACHE = 'fokusgarten-v27';
+const CACHE = 'fokusgarten-v31';
 const SHELL = [
   './',
   './index.html',

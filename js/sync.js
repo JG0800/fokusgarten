@@ -147,6 +147,15 @@
       if ((l && !r) || (r && !l)) return baseIds.has(id) ? null : (l || r);   // auf der anderen Seite gelöscht?
       return null;
     }).filter(Boolean).sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
+    // Eigene Musik-Links: wie Aufgaben (neue behalten, Löschungen respektieren)
+    const baseLinks = new Set((b.musicLinks || []).map(l => l.id));
+    const lLinks = new Map((local.musicLinks || []).map(l => [l.id, l]));
+    const rLinks = new Map((remote.musicLinks || []).map(l => [l.id, l]));
+    out.musicLinks = [...new Set([...lLinks.keys(), ...rLinks.keys()])].map(id => {
+      const l = lLinks.get(id), r = rLinks.get(id);
+      if (l && r) return l;
+      return baseLinks.has(id) ? null : (l || r);
+    }).filter(Boolean);
     out.updatedAt = Date.now();
     return out;
   }

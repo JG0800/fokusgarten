@@ -7,6 +7,8 @@
   const $ = (sel, root = document) => root.querySelector(sel);
 
   const CYCLE_BONUS = 10;
+  const FINISH_RATE = 0.4;   // Abschluss-Bonus: 40 % der Fokusminuten (bei 25 Min. = 10 🪙)
+  const FINISH_MIN = 5;
   const TASK_REWARD = 50;
   const MODE_INFO = {
     focus: { label: 'Fokuszeit', tab: 'Fokus' },
@@ -30,11 +32,18 @@
     P.setBonuses(bonuses);
   }
 
-  /** Münzen für eine Fokuseinheit inkl. Sammlungs-Boni (Kirschbaum %, Sonnenblume +x) */
+  /** Münzen für bereits fokussierte Minuten (gibt es auch bei Abbruch; inkl. Kirschbaum-%) */
+  const minuteCoins = minutes => Math.round(minutes * bonuses.focusMult);
+
+  /**
+   * Münzen für eine vollständig geschaffte Fokuseinheit:
+   * Minuten-Münzen + Abschluss-Bonus (inkl. Sonnenblumen-Bonus).
+   */
   function focusReward(minutes) {
-    const base = Math.round(minutes * bonuses.focusMult);
-    const extra = base - minutes + bonuses.sessionCoins;
-    return { total: base + bonuses.sessionCoins, extra };
+    const forMinutes = minuteCoins(minutes);
+    const finish = Math.max(FINISH_MIN, Math.round(minutes * FINISH_RATE)) + bonuses.sessionCoins;
+    const extra = forMinutes - minutes + bonuses.sessionCoins;
+    return { forMinutes, finish, total: forMinutes + finish, extra };
   }
   let statsView = 'week';
   try { statsView = localStorage.getItem('fokusgarten.statsView') || 'week'; } catch (e) { /* ignorieren */ }
@@ -93,7 +102,7 @@
       settings,
       [t.mode, t.running, t.endAt, t.duration, t.running ? null : t.remaining, !!t.fast, t.device || null],
       (s.plots || []).map(p => p && [p.id, p.type, p.growth, p.lastFertilized || 0, p.waterings || 0]),
-      s.collection, s.todos, s.history
+      s.collection, s.todos, s.history, s.musicLinks || []
     ]);
   }
 
@@ -297,23 +306,47 @@
     }
   }
 
-  /* ---------- Fokus-Musik ---------- */
+  /* ---------- Fokus-Musik (erzeugte Stile + eigene YouTube-Links) ---------- */
 
   const Music = window.FocusMusic;
-  let previewStyle = null, previewTimer = null;
+  const YTM = window.YouTubeMusic;
+  const MAX_LINKS = 12;
+  let previewStyle = null, previewTimer = null, lastWant, ytStatus = { state: 'idle', msg: '' };
 
-  /** Welcher Stil soll gerade laufen? (Fokuszeit läuft → gewählter Stil; sonst ggf. Hörprobe) */
+  const isYt = s => typeof s === 'string' && s.startsWith('yt:');
+  const ytEntry = s => (state.musicLinks || []).find(l => 'yt:' + l.id === s) || null;
+  const musicName = s => isYt(s) ? (ytEntry(s) || {}).name || 'YouTube'
+    : (Music && Music.STYLES[s] ? Music.STYLES[s].name : '');
+
+  /** Was soll gerade laufen? Fokuszeit läuft → gewählte Musik; sonst ggf. Hörprobe */
   function wantedMusic() {
     const s = state.settings.music;
-    if (T().mode === 'focus' && T().running && s && s !== 'off') return s;
+    if (T().mode === 'focus' && T().running && s && s !== 'off' && (!isYt(s) || ytEntry(s))) return s;
     return previewStyle;
   }
 
-  function syncMusic() {
-    if (!Music) return;
-    const want = wantedMusic();
-    if (want && Music.style !== want) { Music.setVolume(state.settings.musicVolume / 100); Music.play(want); renderMusic(); }
-    else if (!want && Music.playing) { Music.stop(); renderMusic(); }
+  function syncMusic(force) {
+    const want = wantedMusic() || null;
+    if (!force && want === lastWant) return;
+    lastWant = want;
+    const vol = state.settings.musicVolume;
+    const gen = want && !isYt(want) ? want : null;
+    const yt = want && isYt(want) ? ytEntry(want) : null;
+    if (Music) {
+      if (gen && Music.style !== gen) { Music.setVolume(vol / 100); Music.play(gen); }
+      else if (!gen && Music.playing) Music.stop();
+    }
+    if (YTM) {
+      if (yt) { YTM.setVolume(vol); YTM.play(yt, $('#ytPlayer'), onYtState).catch(e => onYtState('error', e.message)); }
+      else if (YTM.playing) YTM.pause();
+    }
+    renderMusic();
+  }
+
+  function onYtState(type, msg = '') {
+    ytStatus = { state: type, msg };
+    if (type === 'error') toast('🎵 ' + msg, 'warn');
+    renderMusic();
   }
 
   function chooseMusic(style) {
@@ -321,32 +354,98 @@
     persist();
     clearTimeout(previewTimer);
     previewStyle = null;
-    // Außerhalb der Fokuszeit: kurze Hörprobe
+    ytStatus = { state: 'idle', msg: '' };
+    // Außerhalb der Fokuszeit: kurze Hörprobe (YouTube etwas länger, weil es kurz lädt)
     const focusRunning = T().mode === 'focus' && T().running;
     if (style !== 'off' && !focusRunning) {
       previewStyle = style;
-      previewTimer = setTimeout(() => { previewStyle = null; syncMusic(); renderMusic(); }, 8000);
+      previewTimer = setTimeout(() => { previewStyle = null; syncMusic(); }, isYt(style) ? 15000 : 8000);
     }
-    syncMusic();
-    renderMusic();
+    syncMusic(true);
+  }
+
+  /** Auswahl-Buttons neu aufbauen (nur wenn sich die Liste ändert) */
+  function renderMusicChips() {
+    const builtIn = [['off', '🔇 Aus']].concat(
+      Music ? Object.entries(Music.STYLES).map(([k, v]) => [k, `${v.icon} ${k === 'techno' ? 'Techno' : v.name}`]) : []);
+    let html = builtIn.map(([k, label]) =>
+      `<button type="button" class="music-chip" role="radio" data-music="${k}">${label}</button>`).join('');
+    if (YTM) {
+      html += (state.musicLinks || []).map(l => `
+        <span class="music-chip-wrap">
+          <button type="button" class="music-chip yt" role="radio" data-music="yt:${esc(l.id)}" title="${esc(l.name)}">
+            <span class="yt-icon" aria-hidden="true">▶</span><span class="yt-name">${esc(l.name)}</span></button>
+          <button type="button" class="music-del" data-del="${esc(l.id)}" aria-label="„${esc(l.name)}“ entfernen" title="Entfernen">✕</button>
+        </span>`).join('');
+      if ((state.musicLinks || []).length < MAX_LINKS) {
+        html += '<button type="button" class="music-chip add" id="musicAddBtn" aria-expanded="false">＋ YouTube</button>';
+      }
+    }
+    $('#musicChips').innerHTML = html;
   }
 
   function renderMusic() {
-    if (!Music) { $('#musicBar').hidden = true; return; }
+    if (!Music && !YTM) { $('#musicBar').hidden = true; return; }
     const s = state.settings.music || 'off';
-    document.querySelectorAll('.music-chip').forEach(b => {
+    document.querySelectorAll('.music-chip[data-music]').forEach(b => {
       const on = b.dataset.music === s;
       b.classList.toggle('active', on);
       b.setAttribute('aria-checked', on);
     });
     $('#musicVolume').value = state.settings.musicVolume;
-    const name = k => Music.STYLES[k] ? Music.STYLES[k].name : '';
+    const want = wantedMusic();
+    const ytActive = !!(want && isYt(want));
+    $('#ytWrap').hidden = !ytActive;   // YouTube-Player ist beim Abspielen immer sichtbar
     let note;
     if (s === 'off') note = 'Keine Musik';
-    else if (previewStyle) note = `Hörprobe: ${name(previewStyle)} …`;
-    else if (Music.playing) note = `♪ Läuft: ${name(Music.style)}`;
+    else if (isYt(s) && ytStatus.state === 'error') note = '⚠️ ' + ytStatus.msg;
+    else if (ytActive && ytStatus.state === 'loading') note = 'YouTube lädt …';
+    else if (previewStyle) note = `Hörprobe: ${musicName(previewStyle)} …`;
+    else if (want) note = `♪ Läuft: ${musicName(want)}`;
     else note = 'Startet automatisch mit der Fokuszeit';
     $('#musicNote').textContent = note;
+  }
+
+  function toggleYtForm(show) {
+    const f = $('#ytForm');
+    f.hidden = !show;
+    const btn = $('#musicAddBtn');
+    if (btn) btn.setAttribute('aria-expanded', show);
+    $('#ytMsg').textContent = '';
+    const warn = $('#ytWarn');
+    warn.hidden = YTM.supported;
+    if (!YTM.supported) warn.innerHTML = `⚠️ Du hast den Fokusgarten als Datei geöffnet. YouTube spielt nur, wenn er über eine Webadresse läuft – öffne ihn über <a href="${YTM.ONLINE_URL}" target="_blank" rel="noopener">${YTM.ONLINE_URL}</a>.`;
+    if (show) { $('#ytUrl').value = ''; $('#ytName').value = ''; $('#ytUrl').focus(); }
+  }
+
+  async function addYtLink() {
+    const parsed = YTM.parse($('#ytUrl').value);
+    if (!parsed) { $('#ytMsg').textContent = 'Das sieht nicht nach einem YouTube-Link aus.'; return; }
+    const links = state.musicLinks || (state.musicLinks = []);
+    const dupe = links.find(l => l.videoId === parsed.videoId && l.listId === parsed.listId);
+    if (dupe) { toggleYtForm(false); chooseMusic('yt:' + dupe.id); return; }
+    let name = $('#ytName').value.trim();
+    if (!name) {
+      $('#ytMsg').textContent = 'Titel wird geladen …';
+      name = await YTM.fetchTitle(parsed) || (parsed.videoId ? 'YouTube-Video' : 'YouTube-Playlist');
+    }
+    const entry = { id: 'y' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: name.slice(0, 60), videoId: parsed.videoId, listId: parsed.listId };
+    links.push(entry);
+    persist();
+    toggleYtForm(false);
+    renderMusicChips();
+    toast(`🎵 „${entry.name}“ hinzugefügt.`, 'success');
+    chooseMusic('yt:' + entry.id);
+  }
+
+  function removeYtLink(id) {
+    const entry = (state.musicLinks || []).find(l => l.id === id);
+    if (!entry || !confirm(`„${entry.name}“ aus deiner Musik entfernen?`)) return;
+    state.musicLinks = state.musicLinks.filter(l => l.id !== id);
+    if (state.settings.music === 'yt:' + id) { state.settings.music = 'off'; previewStyle = null; }
+    persist();
+    renderMusicChips();
+    syncMusic(true);
   }
 
   /* ---------- Timer ---------- */
@@ -393,9 +492,37 @@
     return T().mode === 'focus' && (T().running || T().remaining < T().duration);
   }
 
-  function confirmAbortFocus() {
-    return !isFocusInProgress() ||
-      confirm('Laufende Fokuszeit abbrechen? Für abgebrochene Einheiten gibt es keine Münzen.');
+  /** Bereits fokussierte Minuten der aktuellen Fokusphase (im Schnelltimer: Sekunden) */
+  function focusedMinutes(t = T()) {
+    const left = t.running && t.endAt ? Math.max(0, Math.ceil((t.endAt - now()) / 1000)) : t.remaining;
+    const secs = Math.max(0, t.duration - left);
+    return t.fast ? secs : Math.floor(secs / 60);
+  }
+
+  /**
+   * Laufende Fokuszeit abbrechen: nachfragen und die bisher fokussierten Minuten
+   * auszahlen (ohne Abschluss-Bonus). Gibt false zurück, wenn der Nutzer weitermacht.
+   */
+  function abortFocus() {
+    if (!isFocusInProgress()) return true;
+    const mins = focusedMinutes();
+    const coins = minuteCoins(mins);
+    const fr = focusReward(timerMinutes(T()));
+    const msg = coins > 0
+      ? `Laufende Fokuszeit abbrechen?\n\nFür deine ${mins} Min. bekommst du ${coins} 🪙. ` +
+        `Der Abschluss-Bonus von ${fr.finish} 🪙 entfällt.`
+      : 'Laufende Fokuszeit abbrechen?\n\nDu hast noch keine volle Minute fokussiert – dafür gibt es noch keine Münzen.';
+    if (!confirm(msg)) return false;
+    if (mins > 0) {
+      state.totalFocusMinutes += mins;
+      const k = dateKey();
+      state.history[k] = (state.history[k] || 0) + mins;
+    }
+    if (coins > 0) {
+      earn(coins);
+      toast(`Abgebrochen – für ${mins} Min. Fokus bekommst du ${coins} 🪙.`, '');
+    }
+    return true;
   }
 
   function nextModeAfterFocus() {
@@ -417,10 +544,11 @@
       const cycleDone = state.cycleCount >= state.settings.longEvery;
       if (cycleDone) reward += CYCLE_BONUS;
       earn(reward);
-      const extraTxt = fr.extra > 0 ? ` (davon ${fr.extra} 🪙 Sammlungs-Bonus)` : '';
+      const parts = `${fr.forMinutes} 🪙 + ${fr.finish} 🪙 Abschluss-Bonus` + (cycleDone ? ` + ${CYCLE_BONUS} 🪙 Zyklus-Bonus` : '');
+      const extraTxt = fr.extra > 0 ? `, davon ${fr.extra} 🪙 Sammlungs-Bonus` : '';
       toast(cycleDone
-        ? `Stark! Fokus + Zyklus-Bonus: ${reward} 🪙${extraTxt}. Gönn dir eine lange Pause.`
-        : `Fokuszeit geschafft! Du erhältst ${reward} 🪙${extraTxt}.`, 'success');
+        ? `Stark! Du erhältst ${reward} 🪙 (${parts}${extraTxt}). Gönn dir eine lange Pause.`
+        : `Fokuszeit geschafft! Du erhältst ${reward} 🪙 (${parts}${extraTxt}).`, 'success');
       notify('Fokuszeit geschafft! 🌱', `+${reward} Münzen. Zeit für eine Pause.`);
       chime(true);
       setMode(nextModeAfterFocus());
@@ -437,7 +565,7 @@
 
   function skipPhase() {
     if (T().mode === 'focus') {
-      if (!confirmAbortFocus()) return;
+      if (!abortFocus()) return;
       setMode('short');
     } else {
       setMode('focus');
@@ -447,10 +575,10 @@
   }
 
   function resetTimer() {
-    if (T().mode === 'focus' && !confirmAbortFocus()) return;
+    if (T().mode === 'focus' && !abortFocus()) return;
     setMode(T().mode);
     persist();
-    renderTimer();
+    renderAll();
   }
 
   function tick() {
@@ -639,9 +767,16 @@
       const mins = timerMinutes(t);
       const fr = focusReward(mins);
       const bonus = state.cycleCount + 1 >= state.settings.longEvery;
-      hint = `Diese Fokuseinheit bringt dir <strong>${fr.total} 🪙</strong>` +
-        (fr.extra > 0 ? ` (inkl. ${fr.extra} 🪙 Sammlungs-Bonus)` : '') +
-        (bonus ? ` + <strong>${CYCLE_BONUS} 🪙</strong> Zyklus-Bonus` : '') + '.';
+      const cycleTxt = bonus ? ` + <strong>${CYCLE_BONUS} 🪙</strong> Zyklus-Bonus` : '';
+      if (t.remaining < t.duration) {
+        const sofar = minuteCoins(focusedMinutes(t));
+        hint = `Bisher verdient: <strong>${sofar} 🪙</strong> · Wenn du durchhältst: ` +
+          `+<strong>${fr.finish} 🪙</strong> Abschluss-Bonus${cycleTxt}.`;
+      } else {
+        hint = `Diese Fokuseinheit bringt dir <strong>${fr.total} 🪙</strong>: ` +
+          `${fr.forMinutes} 🪙 für die Minuten (gibt’s auch bei Abbruch) + <strong>${fr.finish} 🪙</strong> Abschluss-Bonus` +
+          cycleTxt + (fr.extra > 0 ? ` (inkl. ${fr.extra} 🪙 Sammlungs-Bonus)` : '') + '.';
+      }
     } else {
       hint = t.mode === 'long'
         ? 'Lange Pause – beweg dich, iss etwas, schau in die Ferne.'
@@ -989,6 +1124,7 @@
   function renderAll() {
     applyBonuses();
     renderCoins();
+    renderMusicChips();
     renderMusic();
     renderTodos();
     renderTimer();
@@ -1052,10 +1188,10 @@
     document.querySelectorAll('.mode-tab').forEach(b => b.addEventListener('click', () => {
       const mode = b.dataset.mode;
       if (mode === T().mode) return;
-      if (!confirmAbortFocus()) return;
+      if (!abortFocus()) return;
       setMode(mode);
       persist();
-      renderTimer();
+      renderAll();
     }));
 
     $('#plantPanel').addEventListener('click', e => {
@@ -1092,14 +1228,26 @@
     $('#todoList').addEventListener('click', onTodoClick);
     $('#todoDoneList').addEventListener('click', onTodoClick);
 
-    document.querySelectorAll('.music-chip').forEach(b => b.addEventListener('click', () => chooseMusic(b.dataset.music)));
+    $('#musicChips').addEventListener('click', e => {
+      const del = e.target.closest('[data-del]');
+      if (del) { removeYtLink(del.dataset.del); return; }
+      if (e.target.closest('#musicAddBtn')) { toggleYtForm($('#ytForm').hidden); return; }
+      const chip = e.target.closest('[data-music]');
+      if (chip) chooseMusic(chip.dataset.music);
+    });
+    $('#ytForm').addEventListener('submit', e => { e.preventDefault(); addYtLink(); });
+    $('#ytCancel').addEventListener('click', () => toggleYtForm(false));
     $('#musicVolume').addEventListener('input', e => {
       state.settings.musicVolume = +e.target.value;
       if (Music) Music.setVolume(state.settings.musicVolume / 100);
+      if (YTM) YTM.setVolume(state.settings.musicVolume);
     });
     $('#musicVolume').addEventListener('change', persist);
     // Browser erlauben Ton erst nach einer Nutzeraktion – danach ggf. weiterspielen
-    document.addEventListener('pointerdown', () => { if (Music) { Music.unlock(); syncMusic(); } });
+    document.addEventListener('pointerdown', () => {
+      if (Music) Music.unlock();
+      if (wantedMusic() && !(Music && Music.playing) && !(YTM && YTM.playing)) syncMusic(true);
+    });
 
     $('#settingsBtn').addEventListener('click', openSettings);
     // Direkt beim Klick speichern – nicht erst im 'close'-Ereignis des Dialogs,

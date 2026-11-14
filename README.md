@@ -5,7 +5,7 @@ Ein Fokus-Timer mit Pausen, der konzentrierte Arbeit belohnt: Für jede abgeschl
 ## Funktionen
 
 - **Timer mit Fokus- und Pausenzeiten** – Standard: 25 Min. Fokus, 5 Min. kurze Pause, 15 Min. lange Pause nach 4 Einheiten (alles einstellbar).
-- **Münzen** – 1 🪙 pro Fokusminute, +10 🪙 Bonus für jeden vollen Zyklus. Abgebrochene Einheiten bringen nichts.
+- **Münzen** – 1 🪙 pro Fokusminute, auch wenn du eine Einheit abbrichst. Wer die Einheit ganz schafft, bekommt einen **Abschluss-Bonus** (40 % der Minuten, mind. 5 🪙 – bei 25 Min. also +10 🪙) und +10 🪙 Zyklus-Bonus für jeden vollen Zyklus.
 - **Aufgabenliste** – Aufgaben eintragen und abhaken: Jede erledigte Aufgabe bringt 50 🪙. Erledigte Aufgaben wandern in eine einklappbare Liste. Die Liste bleibt auch im Fokusmodus sichtbar.
 - **Lebendiger Garten** – eine Szene mit blauem Himmel, Sonne, vorbeiziehenden Wolken, Hügeln, Zaun und 6 Beeten. Ein Klick auf ein Beet zeigt darunter die Details zur Pflanze.
 - **Pflanzen mit Persönlichkeit** – im Cartoon-Stil mit Konturen, Farbverläufen und großen weißen Augen mit blauer Iris. Sie wippen, schauen umher, wiegen sich im Wind, blinzeln und zeigen ihre Stimmung: schlafend als Samen, fröhlich, durstig (Blick nach oben, Schweißtropfen), welk (halb geschlossene Augen, Träne) oder strahlend mit roten Wangen nach dem Gießen und in voller Blüte.
@@ -22,7 +22,7 @@ Ein Fokus-Timer mit Pausen, der konzentrierte Arbeit belohnt: Für jede abgeschl
 - **Statistik** – Fokuszeit heute, im laufenden Monat, im Jahr und insgesamt. Diagramme für die letzten 7 Tage, die letzten 12 Monate und alle Jahre, dazu Serie (Tage in Folge), Anzahl der Fokuseinheiten, bester Tag und bester Monat.
 - **Speicherung** – Münzen, Pflanzen, Statistik und sogar ein laufender Timer werden automatisch im Browser (`localStorage`) gespeichert. Zusätzlich gibt es Export/Import als JSON-Datei (Einstellungen → Spielstand).
 - **Testumgebung** (Einstellungen → 🧪 Testmodus → „Testumgebung starten“) – startet einen eigenen, leeren Testgarten in einem getrennten Speicherplatz, mit unbegrenzten Münzen, Gießen und Düngen ohne Wartezeiten und optionalem Schnelltimer (Minuten laufen als Sekunden). Dein echter Spielstand wird dabei nicht verändert; ein laufender Timer wird pausiert. Beim Verlassen wird die Testumgebung verworfen.
-- **Fokus-Musik** – Meditativ, Fokus-Techno oder Regen. Die Musik wird live im Browser erzeugt (keine Audiodateien), startet automatisch mit der Fokuszeit und blendet in Pausen aus. Ein Klick auf einen Stil spielt außerhalb der Fokuszeit eine 8-Sekunden-Hörprobe.
+- **Fokus-Musik** – Meditativ, Fokus-Techno oder Regen (live im Browser erzeugt, keine Audiodateien) **oder eigene YouTube-Links**: Unter „＋ YouTube“ einen Video- oder Playlist-Link einfügen – der Titel wird automatisch übernommen. Die Musik startet mit der Fokuszeit und blendet in Pausen aus; ein Klick auf einen Eintrag spielt außerhalb der Fokuszeit eine kurze Hörprobe. YouTube läuft über den offiziellen, datensparsamen Player (youtube-nocookie.com), der beim Abspielen sichtbar ist. Eigene Links werden mit dem Spielstand synchronisiert.
 - **Synchronisation zwischen Handy und PC** – über einen geheimen Gist in deinem GitHub-Konto (Einstellungen → ☁️ Synchronisation). Änderungen werden nach wenigen Sekunden, jede Minute und beim Zurückkehren in die App abgeglichen; gleichzeitige Änderungen auf zwei Geräten werden zusammengeführt. Eine Fokuszeit schließt immer das Gerät ab, das sie gestartet hat – Münzen gibt es also nicht doppelt.
 - **Als App installierbar** – auf Handy und PC mit eigenem Symbol, Vollbild und Offline-Start.
 - Ton und optionale Desktop-Benachrichtigung am Ende jeder Phase, helles und dunkles Design, funktioniert auf dem Handy.
@@ -74,6 +74,7 @@ js/plants.js      Pflanzenarten, Wachstumsregeln, Pflanzengrafiken mit Gesichter
 js/scene.js       Gartenszene (Himmel, Wolken, Beete, Animationen)
 js/storage.js     Speichern, Laden, Export/Import, Testumgebung
 js/music.js       Fokus-Musik (Web Audio)
+js/youtube.js     Eigene Musik über YouTube-Links (IFrame-Player)
 js/sync.js        Synchronisation über einen privaten GitHub-Gist
 sw.js             Service Worker (Offline-Start)
 manifest.webmanifest, icons/   Installation als App

@@ -32,6 +32,7 @@
       collection: [],
       history: {},            // 'YYYY-MM-DD' -> Fokusminuten
       todos: [],              // Aufgaben: { id, text, done, createdAt, doneAt }
+      musicLinks: [],         // eigene YouTube-Musik: { id, name, videoId, listId }
       tasksCompleted: 0
     };
   }
@@ -48,6 +49,12 @@
     const plots = Array.isArray(raw.plots) ? raw.plots.slice(0, d.plots.length) : [];
     while (plots.length < d.plots.length) plots.push(null);
     s.plots = plots.map(p => (p && global.Plants.PLANT_TYPES[p.type]) ? p : null);
+    s.musicLinks = Array.isArray(raw.musicLinks)
+      ? raw.musicLinks.filter(l => l && typeof l.id === 'string' && (/^[\w-]{11}$/.test(l.videoId || '') || /^[\w-]+$/.test(l.listId || '')))
+          .map(l => ({ id: l.id.slice(0, 40), name: String(l.name || 'YouTube').slice(0, 60),
+            videoId: /^[\w-]{11}$/.test(l.videoId || '') ? l.videoId : null, listId: /^[\w-]+$/.test(l.listId || '') ? l.listId : null }))
+          .slice(0, 12)
+      : [];
     s.todos = Array.isArray(raw.todos)
       ? raw.todos.filter(t => t && typeof t.text === 'string').map(t => ({
           id: String(t.id || ('t' + Math.random().toString(36).slice(2))), text: t.text.slice(0, 200),

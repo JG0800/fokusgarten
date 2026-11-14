@@ -8,6 +8,8 @@
   <!-- Als App installierbar (Handy & PC) -->
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#3f8a3c">
+  <!-- YouTube braucht die Herkunftsseite (sonst Fehler 153) -->
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Fokusgarten">
@@ -17,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
   <header class="topbar">
@@ -79,12 +81,18 @@
             <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="Lautstärke der Musik">
           </label>
         </div>
-        <div class="music-chips" role="radiogroup" aria-label="Musikstil">
-          <button type="button" class="music-chip" role="radio" data-music="off">🔇 Aus</button>
-          <button type="button" class="music-chip" role="radio" data-music="meditativ">🧘 Meditativ</button>
-          <button type="button" class="music-chip" role="radio" data-music="techno">🎧 Techno</button>
-          <button type="button" class="music-chip" role="radio" data-music="regen">🌧️ Regen</button>
-        </div>
+        <div class="music-chips" id="musicChips" role="radiogroup" aria-label="Musik"></div>
+        <form class="yt-form" id="ytForm" hidden autocomplete="off">
+          <input type="url" id="ytUrl" placeholder="YouTube-Link (Video oder Playlist)" aria-label="YouTube-Link" required>
+          <input type="text" id="ytName" placeholder="Name (optional)" maxlength="60" aria-label="Name">
+          <div class="yt-form-row">
+            <button type="submit" class="btn btn-primary">Hinzufügen</button>
+            <button type="button" class="btn btn-ghost" id="ytCancel">Abbrechen</button>
+          </div>
+          <p class="yt-msg" id="ytMsg"></p>
+          <p class="yt-warn" id="ytWarn" hidden></p>
+        </form>
+        <div class="yt-wrap" id="ytWrap" hidden><div id="ytPlayer"></div></div>
         <p class="music-note" id="musicNote"></p>
       </div>
 
@@ -256,11 +264,12 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="js/plants.js?v=27"></script>
-  <script src="js/scene.js?v=27"></script>
-  <script src="js/music.js?v=27"></script>
-  <script src="js/storage.js?v=27"></script>
-  <script src="js/sync.js?v=27"></script>
-  <script src="js/app.js?v=27"></script>
+  <script src="js/plants.js?v=31"></script>
+  <script src="js/scene.js?v=31"></script>
+  <script src="js/youtube.js?v=31"></script>
+  <script src="js/music.js?v=31"></script>
+  <script src="js/storage.js?v=31"></script>
+  <script src="js/sync.js?v=31"></script>
+  <script src="js/app.js?v=31"></script>
 </body>
 </html>

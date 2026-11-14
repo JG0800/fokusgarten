@@ -87,8 +87,8 @@
 
   const BONUS_INFO = {
     sonnenblume: {
-      per: 'mehr 🪙 pro Fokuseinheit (erst +1, bis zu +10 🪙)',
-      total: n => `+${bonusValue('sonnenblume', n)} 🪙 pro Fokuseinheit`
+      per: 'mehr Abschluss-Bonus pro geschaffter Fokuseinheit (erst +1, bis zu +10 🪙)',
+      total: n => `+${bonusValue('sonnenblume', n)} 🪙 Abschluss-Bonus pro Fokuseinheit`
     },
     tulpe: {
       per: 'Wasserverlust aller Pflanzen −5 % (vom aktuellen Wert)',

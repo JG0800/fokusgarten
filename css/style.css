@@ -213,6 +213,38 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 }
 .music-chip:hover { border-color: var(--accent); }
 .music-chip.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.music-chip-wrap { position: relative; display: flex; min-width: 0; }
+.music-chip-wrap .music-chip { flex: 1; min-width: 0; padding-right: 22px; display: flex; align-items: center; gap: 5px; justify-content: center; }
+.music-chip.yt .yt-icon { color: #e53935; font-size: .7rem; flex: none; }
+.music-chip.yt.active .yt-icon { color: inherit; }
+.music-chip.yt .yt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.music-del {
+  position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+  background: transparent; color: inherit; opacity: .55; font-size: .7rem; line-height: 18px;
+}
+.music-del:hover { opacity: 1; background: rgba(0,0,0,.12); }
+.music-chip.add { border-style: dashed; color: var(--muted); }
+.music-chip.add:hover { color: var(--accent); }
+
+.yt-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.yt-form[hidden] { display: none; }
+.yt-form input {
+  font: inherit; font-size: .86rem; padding: 7px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text); min-width: 0;
+}
+.yt-form-row { display: flex; gap: 6px; }
+.yt-form-row .btn { flex: 1; padding: 7px 10px; font-size: .84rem; }
+.yt-msg { margin: 0; font-size: .76rem; color: var(--muted); min-height: 1em; }
+.yt-warn { margin: 0; font-size: .76rem; color: var(--warn); line-height: 1.35; }
+.yt-warn[hidden] { display: none; }
+.yt-warn a { color: var(--accent); font-weight: 700; word-break: break-all; }
+
+/* YouTube-Player: muss beim Abspielen sichtbar sein (mind. 200 × 200 px laut YouTube) */
+.yt-wrap { margin-top: 8px; border-radius: 12px; overflow: hidden; background: #000; height: 200px; }
+.yt-wrap[hidden] { display: none; }
+.yt-wrap iframe, .yt-wrap > div { width: 100%; height: 100%; display: block; border: 0; }
+
 .music-note { margin: 6px 0 0; font-size: .74rem; color: var(--muted); min-height: 1.1em; }
 
 .timer-hint { margin: 14px 0 0; color: var(--muted); font-size: .9rem; min-height: 2.6em; }
