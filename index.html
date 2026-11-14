@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +18,7 @@
       <span class="brand-name">Fokusgarten</span>
     </div>
     <div class="topbar-right">
+      <span class="test-badge" id="testBadge" hidden title="Testumgebung aktiv – dein echter Spielstand bleibt unverändert">🧪 Test</span>
       <div class="coins" title="Deine Münzen" aria-live="polite">
         <span class="coin-icon" aria-hidden="true">🪙</span>
         <span id="coinCount">0</span>
@@ -25,6 +26,11 @@
       <button class="icon-btn" id="settingsBtn" aria-label="Einstellungen" title="Einstellungen">⚙️</button>
     </div>
   </header>
+
+  <div class="test-banner" id="testBanner" hidden role="status">
+    <span>🧪 <strong>Testumgebung</strong> – probier alles aus, dein echter Spielstand bleibt unverändert.</span>
+    <button type="button" class="btn btn-small-inline" id="testExitBanner">Testumgebung verlassen</button>
+  </div>
 
   <main class="layout">
     <!-- Timer -->
@@ -56,17 +62,28 @@
       </div>
 
       <p class="timer-hint" id="timerHint"></p>
+      <p class="focus-note">🌿 Dein Garten ist ausgeblendet, damit du dich ganz auf deine Arbeit konzentrieren kannst. Nach der Fokuszeit ist er wieder da.</p>
     </section>
 
     <!-- Statistik -->
     <section class="card stats-card" aria-labelledby="statsHeading">
-      <h2 id="statsHeading">Deine Woche</h2>
+      <h2 id="statsHeading">Statistik</h2>
       <div class="stat-row">
-        <div class="stat"><span class="stat-value" id="statToday">0</span><span class="stat-label">Min. heute</span></div>
-        <div class="stat"><span class="stat-value" id="statSessions">0</span><span class="stat-label">Fokuseinheiten</span></div>
-        <div class="stat"><span class="stat-value" id="statStreak">0</span><span class="stat-label">Tage in Folge</span></div>
+        <div class="stat"><span class="stat-value" id="statToday">0</span><span class="stat-label">Heute</span></div>
+        <div class="stat"><span class="stat-value" id="statMonth">0</span><span class="stat-label" id="statMonthLabel">Dieser Monat</span></div>
+        <div class="stat"><span class="stat-value" id="statYear">0</span><span class="stat-label" id="statYearLabel">Dieses Jahr</span></div>
+        <div class="stat stat-total"><span class="stat-value" id="statTotal">0</span><span class="stat-label">Gesamt</span></div>
       </div>
-      <div class="week-chart" id="weekChart" aria-label="Fokusminuten der letzten 7 Tage"></div>
+
+      <div class="seg" role="tablist" aria-label="Zeitraum">
+        <button role="tab" class="seg-btn" data-view="week">Woche</button>
+        <button role="tab" class="seg-btn" data-view="month">Monate</button>
+        <button role="tab" class="seg-btn" data-view="year">Jahre</button>
+      </div>
+      <div class="bar-chart" id="statsChart"></div>
+      <p class="chart-caption small" id="chartCaption"></p>
+
+      <ul class="records small" id="records"></ul>
     </section>
 
     <!-- Garten -->
@@ -75,7 +92,8 @@
         <h2 id="gardenHeading">Dein Garten</h2>
         <span class="muted small" id="gardenSummary"></span>
       </div>
-      <div class="garden" id="garden"></div>
+      <div class="scene" id="scene" aria-label="Garten – wähle ein Beet aus"></div>
+      <div class="plant-panel" id="plantPanel" aria-live="polite"></div>
     </section>
 
     <!-- Sammlung -->
@@ -125,9 +143,27 @@
         <label class="check"><input type="checkbox" name="notify"> Desktop-Benachrichtigung</label>
       </fieldset>
 
+      <fieldset class="test-fieldset">
+        <legend>🧪 Testmodus</legend>
+        <div id="testStartArea">
+          <p class="muted small">Startet eine eigene, leere Testumgebung mit unbegrenzten Münzen. Dein echter Spielstand wird dabei nicht verändert und ist nach dem Verlassen wieder da.</p>
+          <button type="button" class="btn btn-test" id="testStartBtn">🧪 Testumgebung starten</button>
+        </div>
+        <div id="testActiveArea" hidden>
+          <p class="muted small">Du bist in der Testumgebung. Nichts hiervon wirkt sich auf deinen echten Spielstand aus.</p>
+          <label class="check"><input type="checkbox" name="testCoins"> Unbegrenzte Münzen</label>
+          <label class="check"><input type="checkbox" name="testNoWait"> Ohne Wartezeiten gießen und düngen</label>
+          <label class="check"><input type="checkbox" name="testFast"> Schnelltimer: Minuten laufen als Sekunden</label>
+          <div class="row-buttons" style="margin-top:10px">
+            <button type="button" class="btn btn-ghost" id="testRestartBtn">↺ Testumgebung neu starten</button>
+            <button type="button" class="btn btn-test" id="testExitBtn">Testumgebung verlassen</button>
+          </div>
+        </div>
+      </fieldset>
+
       <fieldset>
         <legend>Spielstand</legend>
-        <p class="muted small">Dein Spielstand wird automatisch im Browser gespeichert. Für eine Sicherung oder einen Gerätewechsel kannst du ihn als Datei exportieren.</p>
+        <p class="muted small" id="saveNote">Dein Spielstand wird automatisch im Browser gespeichert. Für eine Sicherung oder einen Gerätewechsel kannst du ihn als Datei exportieren.</p>
         <div class="row-buttons">
           <button type="button" class="btn btn-ghost" id="exportBtn">⬇ Exportieren</button>
           <button type="button" class="btn btn-ghost" id="importBtn">⬆ Importieren</button>
@@ -145,8 +181,9 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="js/plants.js"></script>
-  <script src="js/storage.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/plants.js?v=12"></script>
+  <script src="js/scene.js?v=12"></script>
+  <script src="js/storage.js?v=12"></script>
+  <script src="js/app.js?v=12"></script>
 </body>
 </html>

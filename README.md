@@ -6,12 +6,16 @@ Ein Fokus-Timer mit Pausen, der konzentrierte Arbeit belohnt: Für jede abgeschl
 
 - **Timer mit Fokus- und Pausenzeiten** – Standard: 25 Min. Fokus, 5 Min. kurze Pause, 15 Min. lange Pause nach 4 Einheiten (alles einstellbar).
 - **Münzen** – 1 🪙 pro Fokusminute, +10 🪙 Bonus für jeden vollen Zyklus. Abgebrochene Einheiten bringen nichts.
-- **Garten mit 6 Beeten** – Samen kaufen, gießen (Wasser + Wachstum) und düngen (schnelleres Wachstum, alle 8 Std. möglich).
-- **4 Pflanzenarten** – Sonnenblume, Tulpe, Kaktus und Kirschbaum, jeweils mit 6 Wachstumsstufen vom Samen bis zur Blüte.
+- **Lebendiger Garten** – eine Szene mit blauem Himmel, Sonne, vorbeiziehenden Wolken, Hügeln, Zaun und 6 Beeten. Ein Klick auf ein Beet zeigt darunter die Details zur Pflanze.
+- **Pflanzen mit Persönlichkeit** – im Cartoon-Stil mit Konturen, Farbverläufen und großen weißen Augen mit blauer Iris. Sie wippen, schauen umher, wiegen sich im Wind, blinzeln und zeigen ihre Stimmung: schlafend als Samen, fröhlich, durstig (Blick nach oben, Schweißtropfen), welk (halb geschlossene Augen, Träne) oder strahlend mit roten Wangen nach dem Gießen und in voller Blüte.
+- **Gießen und Düngen** – Samen kaufen, gießen (Wasser + Wachstum, mit Gießkannen-Animation) und düngen (schnelleres Wachstum, alle 8 Std. möglich).
+- **5 Pflanzenarten** – Sonnenblume, Tulpe, Kaktus, Kirschbaum und Pilz, jeweils mit 6 Wachstumsstufen vom Samen bis zur Blüte.
+- **Fokusmodus** – Sobald eine Fokuszeit läuft, werden Garten, Statistik und Sammlung ausgeblendet und der Timer rückt groß in die Mitte. Beim Pausieren und in den Pausen ist der Garten wieder da.
 - **Wasserhaushalt** – Pflanzen trocknen mit der Zeit aus (auch wenn die App geschlossen ist). Ohne Wasser welken sie und wachsen nicht weiter, bis du sie gießt.
 - **Sammlung** – Voll erblühte Pflanzen kannst du in deine Sammlung aufnehmen und das Beet neu bepflanzen.
-- **Statistik** – Fokusminuten heute, Anzahl Einheiten, Tage in Folge und ein Wochendiagramm.
+- **Statistik** – Fokuszeit heute, im laufenden Monat, im Jahr und insgesamt. Diagramme für die letzten 7 Tage, die letzten 12 Monate und alle Jahre, dazu Serie (Tage in Folge), Anzahl der Fokuseinheiten, bester Tag und bester Monat.
 - **Speicherung** – Münzen, Pflanzen, Statistik und sogar ein laufender Timer werden automatisch im Browser (`localStorage`) gespeichert. Zusätzlich gibt es Export/Import als JSON-Datei (Einstellungen → Spielstand).
+- **Testumgebung** (Einstellungen → 🧪 Testmodus → „Testumgebung starten“) – startet einen eigenen, leeren Testgarten in einem getrennten Speicherplatz, mit unbegrenzten Münzen, Gießen und Düngen ohne Wartezeiten und optionalem Schnelltimer (Minuten laufen als Sekunden). Dein echter Spielstand wird dabei nicht verändert; ein laufender Timer wird pausiert. Beim Verlassen wird die Testumgebung verworfen.
 - Ton und optionale Desktop-Benachrichtigung am Ende jeder Phase, helles und dunkles Design, funktioniert auf dem Handy.
 
 ## Starten
@@ -40,6 +44,7 @@ und dann <http://localhost:8000> öffnen.
 | Tulpe        | 20 🪙 |   5 🪙 | 3 % / Std.    | 22 |
 | Kaktus       | 25 🪙 |   4 🪙 | 1,5 % / Std.  | 26 |
 | Kirschbaum   | 50 🪙 |   8 🪙 | 2,5 % / Std.  | 35 |
+| Pilz         | 30 🪙 |   5 🪙 | 2 % / Std.    | 24 |
 
 \* Jedes Gießen gibt +1 Wachstum, Dünger (20 🪙) gibt +3. Gießen geht erst, wenn der Wasserstand unter 85 % liegt.
 
@@ -48,7 +53,8 @@ und dann <http://localhost:8000> öffnen.
 ```
 index.html        Oberfläche
 css/style.css     Design (hell/dunkel, responsiv)
-js/plants.js      Pflanzenarten, Wachstumsregeln, SVG-Grafiken
+js/plants.js      Pflanzenarten, Wachstumsregeln, Pflanzengrafiken mit Gesichtern
+js/scene.js       Gartenszene (Himmel, Wolken, Beete, Animationen)
 js/storage.js     Speichern, Laden, Export/Import
 js/app.js         Timer, Münzen, Garten, Statistik
 ```

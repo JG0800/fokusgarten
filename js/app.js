@@ -17,6 +17,12 @@
   let state = SG.load();
   let audioCtx = null;
   let shopPlot = null;
+  let scene = null;
+  let selected = 0;
+  const celebrateUntil = {};
+  let focusModeWanted = false;
+  let statsView = 'week';
+  try { statsView = localStorage.getItem('fokusgarten.statsView') || 'week'; } catch (e) { /* ignorieren */ }
 
   /* ---------- Hilfsfunktionen ---------- */
 
@@ -34,7 +40,24 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  function persist() { SG.save(state); }
+  // Beim Wechsel zwischen echtem Spielstand und Testumgebung darf nichts mehr
+  // gespeichert werden – sonst landet ein Stand im falschen Speicherplatz.
+  let switching = false;
+  function persist() { if (!switching) SG.save(state); }
+
+  /** In die Testumgebung wechseln bzw. sie verlassen (lädt die Seite neu) */
+  function switchEnvironment(toTest) {
+    if (toTest) {
+      if (T().running) pauseTimer();   // echter Timer wird pausiert und bleibt erhalten
+      persist();
+      switching = true;
+      SG.startTest(state);
+    } else {
+      switching = true;
+      SG.exitTest();
+    }
+    location.reload();
+  }
 
   function toast(msg, kind = '') {
     const el = document.createElement('div');
@@ -59,6 +82,7 @@
   }
 
   function spend(amount) {
+    if (state.settings.testCoins) { coinFloat(-amount); return true; } // Testmodus: Münzen unbegrenzt
     if (state.coins < amount) {
       toast(`Dir fehlen ${amount - state.coins} 🪙 – Zeit für eine Fokuseinheit!`, 'warn');
       return false;
@@ -119,10 +143,16 @@
     // Ein neuer Zyklus beginnt, sobald nach der langen Pause wieder fokussiert wird
     if (mode === 'focus' && state.cycleCount >= state.settings.longEvery) state.cycleCount = 0;
     T().mode = mode;
-    T().duration = state.settings[mode] * 60;
+    T().fast = !!state.settings.testFast;
+    T().duration = state.settings[mode] * (T().fast ? 1 : 60);
     T().remaining = T().duration;
     T().running = false;
     T().endAt = null;
+  }
+
+  /** Fokusminuten einer Phase (im Schnelltimer zählt jede Sekunde als Minute) */
+  function timerMinutes(t) {
+    return t.fast ? t.duration : Math.round(t.duration / 60);
   }
 
   function startTimer() {
@@ -161,7 +191,7 @@
   function completePhase() {
     const finished = T().mode;
     if (finished === 'focus') {
-      const minutes = Math.round(T().duration / 60);
+      const minutes = timerMinutes(T());
       state.sessionsCompleted += 1;
       state.totalFocusMinutes += minutes;
       state.cycleCount += 1;
@@ -224,8 +254,8 @@
     shopPlot = i;
     const list = $('#shopList');
     list.innerHTML = Object.entries(P.PLANT_TYPES).map(([key, t]) => `
-      <button type="button" class="shop-item" data-type="${key}" ${state.coins < t.seedCost ? 'data-poor' : ''}>
-        <span class="shop-preview">${P.plantSVG(key, 5, false)}</span>
+      <button type="button" class="shop-item" data-type="${key}" ${state.coins < t.seedCost && !state.settings.testCoins ? 'data-poor' : ''}>
+        <span class="shop-preview">${P.plantSVG(key, 5, 'happy')}</span>
         <span class="shop-text">
           <strong>${t.emoji} ${t.name}</strong>
           <span class="muted small">${t.desc}</span>
@@ -241,10 +271,12 @@
     if (shopPlot === null || state.plots[shopPlot]) return;
     if (!spend(t.seedCost)) return;
     state.plots[shopPlot] = P.createPlant(type, now());
-    toast(`${t.emoji} ${t.name} gepflanzt! Gieß sie regelmäßig.`, 'success');
+    toast(`${t.emoji} ${t.name} gepflanzt! Gieß ${t.male ? 'ihn' : 'sie'} regelmäßig.`, 'success');
     const i = shopPlot;
     shopPlot = null;
+    selected = i;
     $('#shopDialog').close();
+    celebrate(i, 2500);
     persist();
     renderGarden();
     animatePlot(i, 'pop');
@@ -254,7 +286,7 @@
     const p = state.plots[i];
     if (!p) return;
     P.applyDecay(p, now());
-    const check = P.canWater(p);
+    const check = P.canWater(p, state.settings.testNoWait);
     if (!check.ok) { toast(check.reason, 'warn'); return; }
     if (!spend(P.PLANT_TYPES[p.type].waterCost)) return;
     const before = P.stageFor(p.type, p.growth);
@@ -262,20 +294,22 @@
     p.water = Math.min(P.RULES.waterMax, p.water + P.RULES.waterAmount);
     if (!wasWilted) p.growth += 1; // eine welke Pflanze muss sich erst erholen
     else toast('Deine Pflanze erholt sich wieder 💚', '');
+    celebrate(i);
     afterGrowth(i, before);
-    animatePlot(i, 'splash');
+    animatePlot(i, 'water');
   }
 
   function fertilizePlant(i) {
     const p = state.plots[i];
     if (!p) return;
     P.applyDecay(p, now());
-    const check = P.canFertilize(p, now());
+    const check = P.canFertilize(p, now(), state.settings.testNoWait);
     if (!check.ok) { toast(check.reason, 'warn'); return; }
     if (!spend(P.RULES.fertilizerCost)) return;
     const before = P.stageFor(p.type, p.growth);
     p.growth += P.RULES.fertilizerGrowth;
     p.lastFertilized = now();
+    celebrate(i);
     afterGrowth(i, before);
     animatePlot(i, 'sparkle');
   }
@@ -290,8 +324,8 @@
     if (after > before) {
       const t = P.PLANT_TYPES[p.type];
       toast(after === P.MAX_STAGE
-        ? `🎉 Deine ${t.name} blüht! Du kannst sie in deine Sammlung aufnehmen.`
-        : `🌱 Deine ${t.name} ist gewachsen: ${P.STAGE_NAMES[after]}`, 'success');
+        ? `🎉 ${t.male ? 'Dein' : 'Deine'} ${t.name} ${t.type === 'pilz' ? 'ist voll ausgewachsen' : 'blüht'}! Du kannst ${t.male ? 'ihn' : 'sie'} in deine Sammlung aufnehmen.`
+        : `🌱 ${t.male ? 'Dein' : 'Deine'} ${t.name} ist gewachsen: ${P.STAGE_NAMES[after]}`, 'success');
       animatePlot(i, 'pop');
     }
   }
@@ -307,32 +341,46 @@
     renderCollection();
   }
 
-  function animatePlot(i, cls) {
-    const el = document.querySelector(`[data-plot="${i}"] .plot-visual`);
-    if (!el) return;
-    if (cls === 'splash') {
-      for (let k = 0; k < 7; k++) {
-        const d = document.createElement('span');
-        d.className = 'drop';
-        d.style.left = (30 + Math.random() * 40) + '%';
-        d.style.animationDelay = (k * 0.07) + 's';
-        el.appendChild(d);
-        setTimeout(() => d.remove(), 1200);
-      }
-    }
-    el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
-    setTimeout(() => el.classList.remove(cls), 1200);
+  function animatePlot(i, kind) {
+    if (scene) scene.effect(i, kind);
+  }
+
+  function celebrate(i, ms = 4000) {
+    celebrateUntil[i] = now() + ms;
+    setTimeout(renderGarden, ms + 50);
   }
 
   /* ---------- Rendering ---------- */
 
   function renderCoins() {
-    $('#coinCount').textContent = state.coins.toLocaleString('de-DE');
+    const test = state.settings.testCoins;
+    $('#coinCount').textContent = test ? '∞' : state.coins.toLocaleString('de-DE');
+    $('.coins').title = test ? 'Testumgebung: unbegrenzte Münzen' : 'Deine Münzen';
+    const inTest = SG.isTest();
+    $('#testBadge').hidden = !inTest;
+    $('#testBanner').hidden = !inTest;
+    document.body.classList.toggle('test-env', inTest);
+  }
+
+  /** Während eine Fokuszeit läuft, wird der Garten ausgeblendet */
+  function applyFocusMode() {
+    const on = T().mode === 'focus' && T().running;
+    if (focusModeWanted === on) return;
+    focusModeWanted = on;
+    // Immer den zuletzt gewünschten Zustand anwenden (Übergänge laufen zeitversetzt)
+    const apply = () => document.body.classList.toggle('focus-mode', focusModeWanted);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (document.startViewTransition && !reduce && !document.hidden) {
+      const vt = document.startViewTransition(apply);
+      // Wird ein Übergang durch einen neuen abgelöst, ist das kein Fehler
+      [vt.ready, vt.finished, vt.updateCallbackDone].forEach(pr => pr && pr.catch(() => {}));
+    } else apply();
   }
 
   function renderTimer() {
     const t = T();
     document.body.dataset.mode = t.mode;
+    applyFocusMode();
     $('#timeDisplay').textContent = fmtTime(t.remaining);
     $('#modeLabel').textContent = MODE_INFO[t.mode].label + (t.running ? '' : (t.remaining < t.duration ? ' · pausiert' : ''));
     const frac = t.duration ? t.remaining / t.duration : 0;
@@ -352,7 +400,7 @@
     // Hinweis
     let hint;
     if (t.mode === 'focus') {
-      const mins = Math.round(t.duration / 60);
+      const mins = timerMinutes(t);
       const bonus = state.cycleCount + 1 >= state.settings.longEvery;
       hint = `Diese Fokuseinheit bringt dir <strong>${mins} 🪙</strong>${bonus ? ` + <strong>${CYCLE_BONUS} 🪙</strong> Zyklus-Bonus` : ''}.`;
     } else {
@@ -380,71 +428,240 @@
     return n;
   }
 
-  function renderStats() {
-    $('#statToday').textContent = state.history[dateKey()] || 0;
-    $('#statSessions').textContent = state.sessionsCompleted;
-    $('#statStreak').textContent = streak();
-    const days = [];
-    for (let k = 6; k >= 0; k--) {
-      const d = new Date(); d.setDate(d.getDate() - k);
-      days.push({ d, min: state.history[dateKey(d)] || 0, today: k === 0 });
-    }
-    const max = Math.max(60, ...days.map(x => x.min));
-    $('#weekChart').innerHTML = days.map(x => `
-      <div class="bar-col ${x.today ? 'today' : ''}" title="${x.d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}: ${x.min} Min.">
-        <span class="bar-val">${x.min || ''}</span>
-        <div class="bar"><span style="height:${(x.min / max) * 100}%"></span></div>
-        <span class="bar-day">${x.d.toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', '')}</span>
+  /** Minuten als lesbare Dauer: "45 Min.", "3 Std. 20 Min." */
+  function fmtDuration(min) {
+    min = Math.round(min || 0);
+    if (min < 60) return `${min} Min.`;
+    const h = Math.floor(min / 60), m = min % 60;
+    return m ? `${h.toLocaleString('de-DE')} Std. ${m} Min.` : `${h.toLocaleString('de-DE')} Std.`;
+  }
+
+  /** Kompakt für Kacheln: "45 Min." bzw. "12,5 Std." */
+  function fmtCompact(min) {
+    min = Math.round(min || 0);
+    if (min < 60) return `${min} Min.`;
+    const h = min / 60;
+    return `${(h >= 100 ? Math.round(h) : Math.round(h * 10) / 10).toLocaleString('de-DE')} Std.`;
+  }
+
+  /** Sehr kurz für Balkenbeschriftungen: "45m", "3,5h" */
+  function fmtBar(min) {
+    if (!min) return '';
+    if (min < 60) return `${Math.round(min)}m`;
+    const h = min / 60;
+    return `${(h >= 10 ? Math.round(h) : Math.round(h * 10) / 10).toLocaleString('de-DE')}h`;
+  }
+
+  /** Tageswerte zu Monaten und Jahren zusammenfassen */
+  function aggregateHistory() {
+    const byMonth = {}, byYear = {};
+    let total = 0, bestDay = null, first = null;
+    Object.entries(state.history).forEach(([k, v]) => {
+      if (!(v > 0)) return;
+      total += v;
+      const ym = k.slice(0, 7), y = k.slice(0, 4);
+      byMonth[ym] = (byMonth[ym] || 0) + v;
+      byYear[y] = (byYear[y] || 0) + v;
+      if (!bestDay || v > bestDay.v) bestDay = { k, v };
+      if (!first || k < first) first = k;
+    });
+    let bestMonth = null;
+    Object.entries(byMonth).forEach(([k, v]) => { if (!bestMonth || v > bestMonth.v) bestMonth = { k, v }; });
+    return { byMonth, byYear, total, bestDay, bestMonth, first };
+  }
+
+  const monthKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const keyToDate = k => new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, k.length > 7 ? +k.slice(8, 10) : 1);
+
+  function barChart(items, minScale) {
+    const max = Math.max(minScale, ...items.map(x => x.value));
+    const el = $('#statsChart');
+    el.style.setProperty('--n', items.length);
+    el.innerHTML = items.map(x => `
+      <div class="bar-col ${x.current ? 'today' : ''}" title="${x.title}">
+        <span class="bar-val">${fmtBar(x.value)}</span>
+        <div class="bar"><span style="height:${(x.value / max) * 100}%"></span></div>
+        <span class="bar-day">${x.label}</span>
       </div>`).join('');
+    el.setAttribute('aria-label', items.map(x => x.title).join(', '));
+  }
+
+  function renderStats() {
+    const agg = aggregateHistory();
+    const today = new Date();
+    const thisMonth = monthKey(today), thisYear = String(today.getFullYear());
+
+    $('#statToday').textContent = fmtCompact(state.history[dateKey()] || 0);
+    $('#statMonth').textContent = fmtCompact(agg.byMonth[thisMonth] || 0);
+    $('#statMonthLabel').textContent = today.toLocaleDateString('de-DE', { month: 'long' });
+    $('#statYear').textContent = fmtCompact(agg.byYear[thisYear] || 0);
+    $('#statYearLabel').textContent = thisYear;
+    $('#statTotal').textContent = fmtCompact(agg.total);
+
+    document.querySelectorAll('.seg-btn').forEach(b => {
+      const on = b.dataset.view === statsView;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on);
+    });
+
+    let caption = '';
+    if (statsView === 'week') {
+      const items = [];
+      for (let k = 6; k >= 0; k--) {
+        const d = new Date(); d.setDate(d.getDate() - k);
+        const v = state.history[dateKey(d)] || 0;
+        items.push({
+          value: v, current: k === 0,
+          label: d.toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', ''),
+          title: `${d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}: ${fmtDuration(v)}`
+        });
+      }
+      barChart(items, 60);
+      const sum = items.reduce((a, x) => a + x.value, 0);
+      caption = `Letzte 7 Tage: <strong>${fmtDuration(sum)}</strong> · Ø ${fmtDuration(sum / 7)} pro Tag`;
+    } else if (statsView === 'month') {
+      const items = [];
+      for (let k = 11; k >= 0; k--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - k, 1);
+        const v = agg.byMonth[monthKey(d)] || 0;
+        items.push({
+          value: v, current: k === 0,
+          label: d.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '').slice(0, 3),
+          title: `${d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}: ${fmtDuration(v)}`
+        });
+      }
+      barChart(items, 600);
+      const sum = items.reduce((a, x) => a + x.value, 0);
+      caption = `Letzte 12 Monate: <strong>${fmtDuration(sum)}</strong> · Ø ${fmtDuration(sum / 12)} pro Monat`;
+    } else {
+      const firstYear = agg.first ? +agg.first.slice(0, 4) : today.getFullYear();
+      const startYear = Math.max(firstYear, today.getFullYear() - 7);
+      const items = [];
+      for (let y = startYear; y <= today.getFullYear(); y++) {
+        const v = agg.byYear[String(y)] || 0;
+        items.push({ value: v, current: y === today.getFullYear(), label: String(y), title: `${y}: ${fmtDuration(v)}` });
+      }
+      barChart(items, 600);
+      caption = agg.first
+        ? `Gesamt: <strong>${fmtDuration(agg.total)}</strong> seit ${keyToDate(agg.first).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' })}`
+        : 'Noch keine Fokuszeit – starte deine erste Einheit!';
+    }
+    $('#chartCaption').innerHTML = caption;
+
+    const rec = [
+      `<li><span>🔥 Serie</span><strong>${streak()} ${streak() === 1 ? 'Tag' : 'Tage'} in Folge</strong></li>`,
+      `<li><span>✅ Fokuseinheiten</span><strong>${state.sessionsCompleted.toLocaleString('de-DE')}</strong></li>`
+    ];
+    if (agg.bestDay) rec.push(`<li><span>🏅 Bester Tag</span><strong>${fmtDuration(agg.bestDay.v)} <span class="muted">(${keyToDate(agg.bestDay.k).toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' })})</span></strong></li>`);
+    if (agg.bestMonth) rec.push(`<li><span>📅 Bester Monat</span><strong>${fmtDuration(agg.bestMonth.v)} <span class="muted">(${keyToDate(agg.bestMonth.k).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })})</span></strong></li>`);
+    $('#records').innerHTML = rec.join('');
   }
 
   function renderGarden() {
     renderCoins();
     const t = now();
-    let planted = 0;
-    $('#garden').innerHTML = state.plots.map((p, i) => {
-      if (!p) {
-        return `<div class="plot empty" data-plot="${i}">
-          <button type="button" class="plant-btn" data-action="plant" data-i="${i}">
-            <span class="plus">+</span><span>Samen pflanzen</span>
-          </button></div>`;
-      }
-      planted++;
-      const type = P.PLANT_TYPES[p.type];
+    const infos = state.plots.map((p, i) => {
+      if (!p) return null;
       const stage = P.stageFor(p.type, p.growth);
-      const status = P.plantStatus(p);
-      const grown = stage >= P.MAX_STAGE;
-      const water = Math.round(p.water);
-      const prog = Math.round(P.stageProgress(p.type, p.growth) * 100);
-      const wCheck = P.canWater(p);
-      const fCheck = P.canFertilize(p, t);
-      const badge = status === 'welk' ? '<span class="badge bad">Welk</span>'
-        : status === 'durstig' ? '<span class="badge warn">Durstig</span>' : '';
-      let note = '';
-      if (status === 'welk') note = 'Gieß mich, damit ich mich erhole!';
-      else if (!wCheck.ok && !grown) note = wCheck.reason;
+      const type = P.PLANT_TYPES[p.type];
+      return {
+        type: p.type, stage, status: P.plantStatus(p), grown: stage >= P.MAX_STAGE,
+        mood: P.moodFor(p, (celebrateUntil[i] || 0) > t),
+        label: `Beet ${i + 1}: ${type.name}, ${P.STAGE_NAMES[stage]}, Wasser ${Math.round(p.water)} %`
+      };
+    });
+    if (scene) scene.update(infos, selected);
+    renderPanel();
 
-      const actions = grown
-        ? `<button type="button" class="btn btn-small btn-gold" data-action="harvest" data-i="${i}">🏆 In die Sammlung</button>
-           <button type="button" class="btn btn-small" data-action="water" data-i="${i}" ${wCheck.ok ? '' : 'disabled'} title="${wCheck.ok ? 'Gießen' : wCheck.reason}">💧 Gießen <span class="cost">${type.waterCost} 🪙</span></button>`
-        : `<button type="button" class="btn btn-small btn-water" data-action="water" data-i="${i}" ${wCheck.ok ? '' : 'disabled'} title="${wCheck.ok ? 'Gießen: +' + P.RULES.waterAmount + ' % Wasser, +1 Wachstum' : wCheck.reason}">💧 Gießen <span class="cost">${type.waterCost} 🪙</span></button>
-           <button type="button" class="btn btn-small btn-fert" data-action="fertilize" data-i="${i}" ${fCheck.ok ? '' : 'disabled'} title="${fCheck.ok ? 'Düngen: +' + P.RULES.fertilizerGrowth + ' Wachstum' : fCheck.reason}">🌿 Düngen <span class="cost">${P.RULES.fertilizerCost} 🪙</span></button>`;
-
-      return `<div class="plot status-${status} ${grown ? 'grown' : ''}" data-plot="${i}">
-        <div class="plot-visual">${P.plantSVG(p.type, stage, status === 'welk')}</div>
-        <div class="plot-title"><span>${type.emoji} ${type.name}</span>${badge}</div>
-        <div class="plot-stage muted small">Stufe ${stage + 1}/${P.MAX_STAGE + 1} · ${P.STAGE_NAMES[stage]}</div>
-        <div class="meter-label small"><span>Wasser</span><span>${water} %</span></div>
-        <div class="meter water ${status !== 'gesund' ? 'low' : ''}"><span style="width:${water}%"></span></div>
-        <div class="meter-label small"><span>Wachstum</span><span>${grown ? '✓ fertig' : prog + ' %'}</span></div>
-        <div class="meter growth"><span style="width:${grown ? 100 : prog}%"></span></div>
-        <div class="plot-note small">${note || (fCheck.ok || grown ? '&nbsp;' : fCheck.reason)}</div>
-        <div class="plot-actions">${actions}</div>
-      </div>`;
-    }).join('');
-
+    const planted = state.plots.filter(Boolean).length;
     const thirsty = state.plots.filter(p => p && P.plantStatus(p) !== 'gesund').length;
     $('#gardenSummary').textContent = `${planted}/${state.plots.length} Beete bepflanzt` + (thirsty ? ` · ${thirsty} brauchen Wasser` : '');
+  }
+
+  function renderPanel() {
+    const i = selected;
+    const p = state.plots[i];
+    const panel = $('#plantPanel');
+    if (!p) {
+      panel.innerHTML = `<div class="panel-row">
+        <div class="panel-info">
+          <div class="plot-title"><span>🟫 Beet ${i + 1} ist frei</span></div>
+          <p class="muted small panel-text">Pflanze einen Samen. Gegossen wird mit den Münzen aus deinen Fokuszeiten.</p>
+        </div>
+        <div class="plot-actions"><button type="button" class="btn btn-primary" data-action="plant" data-i="${i}">🌱 Samen pflanzen</button></div>
+      </div>`;
+      return;
+    }
+    const t = now();
+    const type = P.PLANT_TYPES[p.type];
+    const stage = P.stageFor(p.type, p.growth);
+    const status = P.plantStatus(p);
+    const grown = stage >= P.MAX_STAGE;
+    const water = Math.round(p.water);
+    const prog = Math.round(P.stageProgress(p.type, p.growth) * 100);
+    const wCheck = P.canWater(p, state.settings.testNoWait);
+    const fCheck = P.canFertilize(p, t, state.settings.testNoWait);
+    const badge = status === 'welk' ? '<span class="badge bad">Welk</span>'
+      : status === 'durstig' ? '<span class="badge warn">Durstig</span>'
+      : grown ? '<span class="badge gold">Blüht</span>' : '<span class="badge ok">Glücklich</span>';
+    let note;
+    if (status === 'welk') note = 'Gieß mich, damit ich mich erhole!';
+    else if (grown) note = 'Ausgewachsen! Nimm mich in deine Sammlung auf.';
+    else note = 'Gießen: +1 Wachstum · Dünger: +' + P.RULES.fertilizerGrowth + ' Wachstum';
+
+    // Wartezeiten
+    const noWait = state.settings.testNoWait;
+    const dur = ms => P.formatDuration(ms);
+    const waterWait = noWait ? 0 : P.waterReadyIn(p);
+    const waterTimes = [
+      status === 'welk' ? '<span class="wait bad">🥀 Welk – jetzt gießen!</span>'
+        : waterWait > 0 ? `<span class="wait">💧 Gießen in <strong>${dur(waterWait)}</strong></span>`
+        : '<span class="wait ok">💧 Gießen jetzt möglich</span>',
+      status === 'welk' ? ''
+        : status === 'durstig' ? `<span class="wait warn">⏳ Welkt in <strong>${dur(P.msUntilWater(p, 0))}</strong></span>`
+        : `<span class="wait">⏳ Durstig in <strong>${dur(P.msUntilWater(p, P.RULES.thirstyBelow))}</strong></span>`
+    ];
+    let growTimes;
+    if (grown) {
+      growTimes = ['<span class="wait ok">🌸 Voll erblüht</span>'];
+    } else {
+      const fertWait = noWait ? 0 : P.fertilizerReadyIn(p, t);
+      const toNext = type.thresholds[stage + 1] - p.growth;
+      growTimes = [
+        status === 'welk' ? '<span class="wait">🌿 Dünger erst nach dem Gießen</span>'
+          : fertWait > 0 ? `<span class="wait">🌿 Dünger in <strong>${dur(fertWait)}</strong></span>`
+          : '<span class="wait ok">🌿 Düngen jetzt möglich</span>',
+        `<span class="wait">⬆️ Nächste Stufe: noch <strong>${toNext}</strong> ${toNext === 1 ? 'Punkt' : 'Punkte'}</span>`
+      ];
+    }
+
+    const waterBtn = `<button type="button" class="btn btn-water" data-action="water" data-i="${i}" ${wCheck.ok ? '' : 'disabled'} title="${wCheck.ok ? 'Gießen: +' + P.RULES.waterAmount + ' % Wasser, +1 Wachstum' : wCheck.reason}">💧 Gießen <span class="cost">${type.waterCost} 🪙</span></button>`;
+    const actions = grown
+      ? `<button type="button" class="btn btn-gold" data-action="harvest" data-i="${i}">🏆 In die Sammlung</button>${waterBtn}`
+      : `${waterBtn}<button type="button" class="btn btn-fert" data-action="fertilize" data-i="${i}" ${fCheck.ok ? '' : 'disabled'} title="${fCheck.ok ? 'Düngen: +' + P.RULES.fertilizerGrowth + ' Wachstum' : fCheck.reason}">🌿 Düngen <span class="cost">${P.RULES.fertilizerCost} 🪙</span></button>`;
+
+    panel.innerHTML = `<div class="panel-row status-${status} ${grown ? 'grown' : ''}">
+      <div class="panel-info">
+        <div class="plot-title"><span>${type.emoji} ${type.name}</span>${badge}</div>
+        <div class="plot-stage muted small">Beet ${i + 1} · Stufe ${stage + 1}/${P.MAX_STAGE + 1} · ${P.STAGE_NAMES[stage]}</div>
+        <div class="meters">
+          <div><div class="meter-label small"><span>Wasser</span><span>${water} %</span></div>
+            <div class="meter water ${status !== 'gesund' ? 'low' : ''}"><span style="width:${water}%"></span></div>
+            <div class="waits">${waterTimes.join('')}</div></div>
+          <div><div class="meter-label small"><span>Wachstum</span><span>${grown ? '✓ fertig' : prog + ' %'}</span></div>
+            <div class="meter growth"><span style="width:${grown ? 100 : prog}%"></span></div>
+            <div class="waits">${growTimes.join('')}</div></div>
+        </div>
+        <div class="plot-note small">${note}</div>
+      </div>
+      <div class="plot-actions">${actions}</div>
+    </div>`;
+  }
+
+  function selectPlot(i) {
+    selected = i;
+    renderGarden();
+    if (!state.plots[i]) openShop(i);
   }
 
   function renderCollection() {
@@ -453,7 +670,7 @@
     $('#collection').innerHTML = c.length
       ? c.slice().reverse().map(x => `
           <div class="trophy" title="${P.PLANT_TYPES[x.type].name} · ausgewachsen am ${new Date(x.grownAt).toLocaleDateString('de-DE')}">
-            ${P.plantSVG(x.type, 5, false)}
+            ${P.plantSVG(x.type, 5, 'joy')}
           </div>`).join('')
       : '<p class="muted small empty-note">Noch leer. Lass eine Pflanze bis zur Blüte wachsen und nimm sie hier auf.</p>';
   }
@@ -473,6 +690,13 @@
     const s = state.settings;
     f.focus.value = s.focus; f.short.value = s.short; f.long.value = s.long; f.longEvery.value = s.longEvery;
     f.autoStart.checked = s.autoStart; f.sound.checked = s.sound; f.notify.checked = s.notify;
+    f.testCoins.checked = s.testCoins; f.testNoWait.checked = s.testNoWait; f.testFast.checked = s.testFast;
+    const inTest = SG.isTest();
+    $('#testStartArea').hidden = inTest;
+    $('#testActiveArea').hidden = !inTest;
+    $('#saveNote').textContent = inTest
+      ? 'Du bist in der Testumgebung: Export, Import und Zurücksetzen betreffen nur die Testumgebung.'
+      : 'Dein Spielstand wird automatisch im Browser gespeichert. Für eine Sicherung oder einen Gerätewechsel kannst du ihn als Datei exportieren.';
     $('#settingsDialog').showModal();
   }
 
@@ -487,11 +711,17 @@
     s.autoStart = f.autoStart.checked;
     s.sound = f.sound.checked;
     s.notify = f.notify.checked;
+    // Test-Hilfen nur in der Testumgebung
+    const inTest = SG.isTest();
+    const fastChanged = inTest && s.testFast !== f.testFast.checked;
+    s.testCoins = inTest && f.testCoins.checked;
+    s.testNoWait = inTest && f.testNoWait.checked;
+    s.testFast = inTest && f.testFast.checked;
     if (s.notify && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
     // Neue Zeit sofort übernehmen, wenn die aktuelle Phase noch nicht begonnen hat
-    if (!T().running && T().remaining === T().duration) setMode(T().mode);
+    if ((!T().running && T().remaining === T().duration) || fastChanged) setMode(T().mode);
     persist();
     renderAll();
     toast('Einstellungen gespeichert.', '');
@@ -513,12 +743,18 @@
       renderTimer();
     }));
 
-    $('#garden').addEventListener('click', e => {
+    $('#plantPanel').addEventListener('click', e => {
       const btn = e.target.closest('[data-action]');
       if (!btn || btn.disabled) return;
       const i = +btn.dataset.i;
       ({ plant: openShop, water: waterPlant, fertilize: fertilizePlant, harvest: harvestPlant })[btn.dataset.action](i);
     });
+
+    document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
+      statsView = b.dataset.view;
+      try { localStorage.setItem('fokusgarten.statsView', statsView); } catch (e) { /* ignorieren */ }
+      renderStats();
+    }));
 
     $('#shopList').addEventListener('click', e => {
       const item = e.target.closest('.shop-item');
@@ -553,7 +789,21 @@
         toast('Import fehlgeschlagen: ' + err.message, 'warn');
       }
     });
+    $('#testStartBtn').addEventListener('click', () => switchEnvironment(true));
+    const leaveTest = () => {
+      if (confirm('Testumgebung verlassen? Alles darin wird verworfen und dein echter Spielstand wieder geladen.')) switchEnvironment(false);
+    };
+    $('#testExitBtn').addEventListener('click', leaveTest);
+    $('#testExitBanner').addEventListener('click', leaveTest);
+    $('#testRestartBtn').addEventListener('click', () => {
+      if (!confirm('Testumgebung neu starten? Der aktuelle Testgarten wird gelöscht.')) return;
+      switching = true;
+      SG.startTest(state);
+      location.reload();
+    });
+
     $('#resetAllBtn').addEventListener('click', () => {
+      if (SG.isTest()) { $('#testRestartBtn').click(); return; }
       if (!confirm('Wirklich alles zurücksetzen? Münzen, Pflanzen und Statistik gehen verloren. Exportiere vorher eine Sicherung, falls du sie behalten willst.')) return;
       state = SG.defaultState();
       persist();
@@ -578,6 +828,10 @@
   /* ---------- Start ---------- */
 
   function init() {
+    document.body.insertAdjacentHTML('afterbegin', P.defsSVG());
+    scene = window.GardenScene.create($('#scene'), selectPlot);
+    const firstPlanted = state.plots.findIndex(Boolean);
+    selected = firstPlanted >= 0 ? firstPlanted : 0;
     updatePlants();
     // Wurde der Timer während die Seite geschlossen war beendet?
     if (T().running && T().endAt && T().endAt <= now()) {
@@ -590,7 +844,7 @@
     bind();
     renderAll();
     setInterval(tick, 250);
-    setInterval(() => { updatePlants(); renderGarden(); persist(); }, 60 * 1000);
+    setInterval(() => { updatePlants(); renderGarden(); persist(); }, 30 * 1000);
   }
 
   init();

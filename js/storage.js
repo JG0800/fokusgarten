@@ -2,8 +2,16 @@
 (function (global) {
   'use strict';
 
-  const KEY = 'fokusgarten.save.v1';
+  const KEY_REAL = 'fokusgarten.save.v1';   // dein echter Spielstand
+  const KEY_TEST = 'fokusgarten.test.v1';   // getrennte Testumgebung
+  const KEY_ENV = 'fokusgarten.env';        // 'test', solange die Testumgebung aktiv ist
   const SAVE_VERSION = 1;
+
+  /** Läuft gerade die Testumgebung? */
+  function isTest() {
+    try { return localStorage.getItem(KEY_ENV) === 'test'; } catch (e) { return false; }
+  }
+  const key = () => (isTest() ? KEY_TEST : KEY_REAL);
 
   function defaultState() {
     return {
@@ -13,7 +21,11 @@
       totalFocusMinutes: 0,
       sessionsCompleted: 0,
       cycleCount: 0,          // abgeschlossene Fokuseinheiten im aktuellen Zyklus
-      settings: { focus: 25, short: 5, long: 15, longEvery: 4, autoStart: false, sound: true, notify: false },
+      settings: {
+        focus: 25, short: 5, long: 15, longEvery: 4, autoStart: false, sound: true, notify: false,
+        // Testmodus
+        testCoins: false, testNoWait: false, testFast: false
+      },
       timer: { mode: 'focus', duration: 25 * 60, remaining: 25 * 60, running: false, endAt: null },
       plots: [null, null, null, null, null, null],
       collection: [],
@@ -41,18 +53,42 @@
   }
 
   function load() {
+    let s;
     try {
-      const txt = localStorage.getItem(KEY);
-      return normalize(txt ? JSON.parse(txt) : null);
+      const txt = localStorage.getItem(key());
+      s = normalize(txt ? JSON.parse(txt) : null);
     } catch (e) {
       console.warn('Spielstand konnte nicht geladen werden:', e);
-      return defaultState();
+      s = defaultState();
     }
+    // Test-Hilfen gibt es nur in der Testumgebung – nie im echten Spielstand
+    if (!isTest()) s.settings.testCoins = s.settings.testNoWait = s.settings.testFast = false;
+    return s;
+  }
+
+  /**
+   * Neue, leere Testumgebung anlegen und aktivieren. Der echte Spielstand wird
+   * nicht angefasst; nur die Timer-Einstellungen werden übernommen.
+   */
+  function startTest(realState) {
+    const t = defaultState();
+    t.settings = Object.assign({}, realState.settings, { testCoins: true, testNoWait: true, testFast: false });
+    t.timer.duration = t.timer.remaining = t.settings.focus * 60;
+    localStorage.setItem(KEY_TEST, JSON.stringify(t));
+    localStorage.setItem(KEY_ENV, 'test');
+  }
+
+  /** Testumgebung verlassen und verwerfen – zurück zum echten Spielstand */
+  function exitTest() {
+    try {
+      localStorage.removeItem(KEY_TEST);
+      localStorage.setItem(KEY_ENV, 'real');
+    } catch (e) { /* ignorieren */ }
   }
 
   function save(state) {
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(key(), JSON.stringify(state));
       return true;
     } catch (e) {
       console.warn('Spielstand konnte nicht gespeichert werden:', e);
@@ -65,7 +101,7 @@
       { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `fokusgarten-spielstand-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `fokusgarten-${isTest() ? 'testumgebung' : 'spielstand'}-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
@@ -81,8 +117,8 @@
   }
 
   function clear() {
-    try { localStorage.removeItem(KEY); } catch (e) { /* ignorieren */ }
+    try { localStorage.removeItem(key()); } catch (e) { /* ignorieren */ }
   }
 
-  global.SaveGame = { load, save, clear, defaultState, normalize, exportToFile, importFromText };
+  global.SaveGame = { load, save, clear, defaultState, normalize, exportToFile, importFromText, isTest, startTest, exitTest };
 })(window);
