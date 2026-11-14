@@ -23,6 +23,7 @@
       cycleCount: 0,          // abgeschlossene Fokuseinheiten im aktuellen Zyklus
       settings: {
         focus: 25, short: 5, long: 15, longEvery: 4, autoStart: false, sound: true, notify: false,
+        music: 'off', musicVolume: 50,
         // Testmodus
         testCoins: false, testNoWait: false, testFast: false
       },

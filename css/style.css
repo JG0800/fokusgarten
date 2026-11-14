@@ -67,6 +67,10 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   max-width: 1180px; margin: 0 auto; padding: 18px 20px 6px;
+  /* Als installierte App: Platz für Notch/Statusleiste lassen */
+  padding-top: max(18px, env(safe-area-inset-top));
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.35rem; }
 .brand-icon { font-size: 1.6rem; }
@@ -81,6 +85,24 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 }
 .coins.bump { animation: bump .45s ease; }
 @keyframes bump { 40% { transform: scale(1.15); } }
+
+.sync-badge {
+  border: 1px solid var(--line); background: var(--card); border-radius: 999px; cursor: pointer;
+  height: 34px; min-width: 34px; padding: 0 8px; font-size: .95rem;
+}
+.sync-badge[hidden] { display: none; }
+.sync-badge[data-state="busy"] { animation: spin 1s linear infinite; }
+.sync-badge[data-state="error"] { border-color: var(--warn); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.sync-steps { margin: 6px 0 10px; padding-left: 20px; color: var(--muted); }
+.sync-steps a { color: var(--accent); font-weight: 700; }
+.sync-row { display: flex; gap: 8px; }
+.sync-row input {
+  flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
+.sync-msg { margin: 6px 0 0; color: var(--muted); min-height: 1em; }
+.sync-error { color: var(--warn); font-weight: 700; }
 
 .test-badge {
   font-size: .78rem; font-weight: 800; padding: 5px 10px; border-radius: 999px;
@@ -131,7 +153,7 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
   .stats-card { order: 3; }
   .todo-card { order: 4; }
   .collection-card { order: 5; }
-  .topbar { padding: 14px 16px 4px; }
+  .topbar { padding: 14px 16px 4px; padding-top: max(14px, env(safe-area-inset-top)); }
 }
 
 .card {
@@ -174,6 +196,25 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 .dot.current { border-color: var(--accent); background: transparent; }
 
 .timer-controls { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; }
+/* Fokus-Musik */
+.music-bar {
+  margin: 16px 0 0; padding: 10px 12px 8px; border-radius: 14px;
+  background: var(--bg-2); text-align: left;
+}
+.music-bar[hidden] { display: none; }
+.music-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.music-title { font-weight: 800; font-size: .88rem; }
+.music-volume { display: flex; align-items: center; gap: 6px; font-size: .9rem; }
+.music-volume input { width: 96px; accent-color: var(--accent); }
+.music-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.music-chip {
+  border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 6px 4px;
+  font-weight: 700; font-size: .78rem; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.music-chip:hover { border-color: var(--accent); }
+.music-chip.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.music-note { margin: 6px 0 0; font-size: .74rem; color: var(--muted); min-height: 1.1em; }
+
 .timer-hint { margin: 14px 0 0; color: var(--muted); font-size: .9rem; min-height: 2.6em; }
 .timer-hint strong { color: var(--text); }
 

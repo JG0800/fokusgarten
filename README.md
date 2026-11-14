@@ -22,25 +22,36 @@ Ein Fokus-Timer mit Pausen, der konzentrierte Arbeit belohnt: Für jede abgeschl
 - **Statistik** – Fokuszeit heute, im laufenden Monat, im Jahr und insgesamt. Diagramme für die letzten 7 Tage, die letzten 12 Monate und alle Jahre, dazu Serie (Tage in Folge), Anzahl der Fokuseinheiten, bester Tag und bester Monat.
 - **Speicherung** – Münzen, Pflanzen, Statistik und sogar ein laufender Timer werden automatisch im Browser (`localStorage`) gespeichert. Zusätzlich gibt es Export/Import als JSON-Datei (Einstellungen → Spielstand).
 - **Testumgebung** (Einstellungen → 🧪 Testmodus → „Testumgebung starten“) – startet einen eigenen, leeren Testgarten in einem getrennten Speicherplatz, mit unbegrenzten Münzen, Gießen und Düngen ohne Wartezeiten und optionalem Schnelltimer (Minuten laufen als Sekunden). Dein echter Spielstand wird dabei nicht verändert; ein laufender Timer wird pausiert. Beim Verlassen wird die Testumgebung verworfen.
+- **Fokus-Musik** – Meditativ, Fokus-Techno oder Regen. Die Musik wird live im Browser erzeugt (keine Audiodateien), startet automatisch mit der Fokuszeit und blendet in Pausen aus. Ein Klick auf einen Stil spielt außerhalb der Fokuszeit eine 8-Sekunden-Hörprobe.
+- **Synchronisation zwischen Handy und PC** – über einen geheimen Gist in deinem GitHub-Konto (Einstellungen → ☁️ Synchronisation). Änderungen werden nach wenigen Sekunden, jede Minute und beim Zurückkehren in die App abgeglichen; gleichzeitige Änderungen auf zwei Geräten werden zusammengeführt. Eine Fokuszeit schließt immer das Gerät ab, das sie gestartet hat – Münzen gibt es also nicht doppelt.
+- **Als App installierbar** – auf Handy und PC mit eigenem Symbol, Vollbild und Offline-Start.
 - Ton und optionale Desktop-Benachrichtigung am Ende jeder Phase, helles und dunkles Design, funktioniert auf dem Handy.
 
 ## Starten
 
-Keine Installation und kein Build nötig – es ist reines HTML, CSS und JavaScript.
+**Online (Handy & PC):** <https://jg0800.github.io/fokusgarten/>
 
-**Variante 1:** `index.html` doppelklicken und im Browser öffnen.
+### Auf dem Handy installieren
+- **iPhone (Safari):** Seite öffnen → Teilen-Symbol → „Zum Home-Bildschirm“.
+- **Android (Chrome):** Seite öffnen → Menü ⋮ → „App installieren“ bzw. „Zum Startbildschirm hinzufügen“.
 
-**Variante 2 (empfohlen, damit Benachrichtigungen funktionieren):** einen kleinen lokalen Server starten:
+### Synchronisation einrichten (einmal pro Gerät)
+1. Auf GitHub einen Zugangsschlüssel erstellen: <https://github.com/settings/tokens/new?scopes=gist&description=Fokusgarten%20Sync> – nur das Häkchen **gist** ist nötig. Ablaufdatum nach Wunsch.
+2. In der App: Einstellungen → ☁️ Synchronisation → Schlüssel einfügen → „Verbinden“.
+3. Auf dem zweiten Gerät dasselbe (derselbe Schlüssel oder ein eigener). Liegt dort schon ein anderer Spielstand, fragt die App, welcher verwendet werden soll.
+
+Der Schlüssel bleibt nur auf dem jeweiligen Gerät gespeichert. Der Spielstand liegt in einem **geheimen** Gist: Er taucht nirgends öffentlich auf, ist aber für jeden lesbar, der den genauen Link kennt.
+
+### Lokal starten
+Keine Installation und kein Build nötig – es ist reines HTML, CSS und JavaScript:
 
 ```bash
 python -m http.server 8000
 ```
 
-und dann <http://localhost:8000> öffnen.
+und dann <http://localhost:8000> öffnen (oder `index.html` direkt im Browser öffnen – dann ohne Offline-Modus und Installation).
 
-**Variante 3:** über GitHub Pages veröffentlichen (Repository → Settings → Pages → Branch `main`, Ordner `/`).
-
-> Hinweis: Der Spielstand wird pro Browser und pro Adresse gespeichert. Wenn du zwischen `file://`, `localhost` und GitHub Pages wechselst, nutze Export/Import, um deinen Garten mitzunehmen.
+> Hinweis: Ohne Synchronisation wird der Spielstand pro Browser und pro Adresse gespeichert. Export/Import (Einstellungen → Spielstand) funktioniert immer.
 
 ## Spielregeln im Überblick
 
@@ -61,7 +72,11 @@ index.html        Oberfläche
 css/style.css     Design (hell/dunkel, responsiv)
 js/plants.js      Pflanzenarten, Wachstumsregeln, Pflanzengrafiken mit Gesichtern
 js/scene.js       Gartenszene (Himmel, Wolken, Beete, Animationen)
-js/storage.js     Speichern, Laden, Export/Import
+js/storage.js     Speichern, Laden, Export/Import, Testumgebung
+js/music.js       Fokus-Musik (Web Audio)
+js/sync.js        Synchronisation über einen privaten GitHub-Gist
+sw.js             Service Worker (Offline-Start)
+manifest.webmanifest, icons/   Installation als App
 js/app.js         Timer, Münzen, Garten, Statistik
 ```
 

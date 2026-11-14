@@ -58,7 +58,151 @@
   // Beim Wechsel zwischen echtem Spielstand und Testumgebung darf nichts mehr
   // gespeichert werden – sonst landet ein Stand im falschen Speicherplatz.
   let switching = false;
-  function persist() { if (!switching) SG.save(state); }
+  function persist() {
+    if (switching) return;
+    if (!SG.isTest()) {
+      // Nur echte Änderungen bekommen einen neuen Zeitstempel (nicht Laden, Wasserverlust usw.)
+      const sg = sigOf(state);
+      if (lastSig !== null && sg !== lastSig) { state.updatedAt = Date.now(); scheduleSync(4000); }
+      lastSig = sg;
+    }
+    SG.save(state);
+  }
+
+  /* ---------- Synchronisation (privater GitHub-Gist) ---------- */
+
+  const Sync = window.GistSync;
+  const DEVICE_ID = (() => {
+    try {
+      let id = localStorage.getItem('fokusgarten.device');
+      if (!id) { id = 'd' + Math.random().toString(36).slice(2, 10); localStorage.setItem('fokusgarten.device', id); }
+      return id;
+    } catch (e) { return 'd0'; }
+  })();
+  let lastSig = null, syncBusy = false, syncTimer = null, foreignWait = false;
+  let syncStatus = { state: 'off', msg: '' };
+  const syncOn = () => !!Sync && !SG.isTest() && Sync.configured();
+
+  /** Fingerabdruck der Daten, die eine echte Änderung darstellen */
+  function sigOf(s) {
+    const t = s.timer || {};
+    const settings = Object.assign({}, s.settings);
+    delete settings.testCoins; delete settings.testNoWait; delete settings.testFast;
+    return JSON.stringify([
+      s.coins, s.totalEarned, s.totalFocusMinutes, s.sessionsCompleted, s.cycleCount, s.tasksCompleted || 0,
+      settings,
+      [t.mode, t.running, t.endAt, t.duration, t.running ? null : t.remaining, !!t.fast, t.device || null],
+      (s.plots || []).map(p => p && [p.id, p.type, p.growth, p.lastFertilized || 0, p.waterings || 0]),
+      s.collection, s.todos, s.history
+    ]);
+  }
+
+  function scheduleSync(ms) {
+    if (!syncOn()) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncNow, ms);
+  }
+
+  function setSyncStatus(st, msg = '') {
+    syncStatus = { state: st, msg };
+    renderSyncBadge();
+    if ($('#settingsDialog').open) renderSyncSettings();
+  }
+
+  function askOverwrite(payload) {
+    const when = payload && payload.updatedAt ? new Date(payload.updatedAt).toLocaleString('de-DE') : 'unbekannt';
+    const dev = payload && payload.device ? ` auf dem ${payload.device}` : '';
+    return Promise.resolve(confirm(
+      `Auf GitHub liegt schon ein Spielstand (zuletzt geändert am ${when}${dev}).\n\n` +
+      'OK = diesen GitHub-Spielstand auf dieses Gerät übernehmen\n' +
+      'Abbrechen = den Spielstand dieses Geräts zu GitHub hochladen'));
+  }
+
+  /** Spielstand von einem anderen Gerät übernehmen */
+  function adoptState(remote) {
+    state = SG.normalize(remote);
+    state.settings.testCoins = state.settings.testNoWait = state.settings.testFast = false;
+    applyBonuses();
+    updatePlants();
+    lastSig = sigOf(state);
+    SG.save(state);
+    if (!state.plots[selected]) { const f = state.plots.findIndex(Boolean); selected = f >= 0 ? f : selected; }
+    renderAll();
+  }
+
+  async function syncNow() {
+    if (!syncOn() || syncBusy) return;
+    clearTimeout(syncTimer);
+    syncBusy = true;
+    setSyncStatus('busy');
+    try {
+      updatePlants();
+      persist();                               // lokale Änderungen vorher sichern
+      const res = await Sync.sync(state, { askOverwrite });
+      if (res.action === 'pulled' || res.action === 'merged') {
+        adoptState(res.state);
+        if (res.action === 'merged') toast('🔄 Änderungen von deinen Geräten wurden zusammengeführt.', '');
+      }
+      setSyncStatus('ok');
+    } catch (e) {
+      console.warn('Synchronisation fehlgeschlagen:', e);
+      setSyncStatus('error', navigator.onLine === false ? 'Offline – wird später nachgeholt.' : e.message);
+    } finally {
+      syncBusy = false;
+    }
+  }
+
+  function renderSyncBadge() {
+    const b = $('#syncBadge');
+    if (!b) return;
+    const on = syncOn();
+    b.hidden = !on;
+    if (!on) return;
+    const st = syncStatus.state;
+    b.dataset.state = st;
+    b.textContent = st === 'busy' ? '🔄' : st === 'error' ? '⚠️' : '☁️';
+    const last = Sync.info().lastSync;
+    b.title = st === 'error' ? `Synchronisation: ${syncStatus.msg}`
+      : st === 'busy' ? 'Synchronisiere …'
+      : `Synchronisiert${last ? ' um ' + new Date(last).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''} – klicken zum Abgleichen`;
+  }
+
+  function renderSyncSettings() {
+    const inTest = SG.isTest();
+    const conn = !!Sync && Sync.configured();
+    if (Sync) $('#syncTokenLink').href = Sync.tokenUrl;
+    $('#syncTestNote').hidden = !inTest;
+    $('#syncConnectArea').hidden = conn;
+    $('#syncActiveArea').hidden = !conn;
+    if (conn) {
+      const info = Sync.info();
+      const last = info.lastSync ? new Date(info.lastSync).toLocaleString('de-DE') : 'noch nie';
+      $('#syncInfo').innerHTML = `Verbunden mit GitHub als <strong>${esc(info.login || '?')}</strong>. Letzter Abgleich: ${esc(last)}.` +
+        (syncStatus.state === 'error' ? `<br><span class="sync-error">⚠️ ${esc(syncStatus.msg)}</span>` : '');
+    }
+  }
+
+  async function connectSync() {
+    const input = $('#syncToken');
+    const btn = $('#syncConnectBtn');
+    btn.disabled = true;
+    $('#syncConnectMsg').textContent = 'Verbinde mit GitHub …';
+    try {
+      updatePlants();
+      persist();
+      const r = await Sync.connect(input.value, state);
+      input.value = '';
+      $('#syncConnectMsg').textContent = '';
+      toast(`☁️ Verbunden mit GitHub (${r.login}).`, 'success');
+      await syncNow();
+    } catch (e) {
+      $('#syncConnectMsg').textContent = '⚠️ ' + e.message;
+    } finally {
+      btn.disabled = false;
+      renderSyncSettings();
+      renderSyncBadge();
+    }
+  }
 
   /** In die Testumgebung wechseln bzw. sie verlassen (lädt die Seite neu) */
   function switchEnvironment(toTest) {
@@ -153,6 +297,58 @@
     }
   }
 
+  /* ---------- Fokus-Musik ---------- */
+
+  const Music = window.FocusMusic;
+  let previewStyle = null, previewTimer = null;
+
+  /** Welcher Stil soll gerade laufen? (Fokuszeit läuft → gewählter Stil; sonst ggf. Hörprobe) */
+  function wantedMusic() {
+    const s = state.settings.music;
+    if (T().mode === 'focus' && T().running && s && s !== 'off') return s;
+    return previewStyle;
+  }
+
+  function syncMusic() {
+    if (!Music) return;
+    const want = wantedMusic();
+    if (want && Music.style !== want) { Music.setVolume(state.settings.musicVolume / 100); Music.play(want); renderMusic(); }
+    else if (!want && Music.playing) { Music.stop(); renderMusic(); }
+  }
+
+  function chooseMusic(style) {
+    state.settings.music = style;
+    persist();
+    clearTimeout(previewTimer);
+    previewStyle = null;
+    // Außerhalb der Fokuszeit: kurze Hörprobe
+    const focusRunning = T().mode === 'focus' && T().running;
+    if (style !== 'off' && !focusRunning) {
+      previewStyle = style;
+      previewTimer = setTimeout(() => { previewStyle = null; syncMusic(); renderMusic(); }, 8000);
+    }
+    syncMusic();
+    renderMusic();
+  }
+
+  function renderMusic() {
+    if (!Music) { $('#musicBar').hidden = true; return; }
+    const s = state.settings.music || 'off';
+    document.querySelectorAll('.music-chip').forEach(b => {
+      const on = b.dataset.music === s;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', on);
+    });
+    $('#musicVolume').value = state.settings.musicVolume;
+    const name = k => Music.STYLES[k] ? Music.STYLES[k].name : '';
+    let note;
+    if (s === 'off') note = 'Keine Musik';
+    else if (previewStyle) note = `Hörprobe: ${name(previewStyle)} …`;
+    else if (Music.playing) note = `♪ Läuft: ${name(Music.style)}`;
+    else note = 'Startet automatisch mit der Fokuszeit';
+    $('#musicNote').textContent = note;
+  }
+
   /* ---------- Timer ---------- */
 
   const T = () => state.timer;
@@ -179,6 +375,7 @@
     if (T().remaining <= 0) T().remaining = T().duration;
     T().endAt = now() + T().remaining * 1000;
     T().running = true;
+    T().device = DEVICE_ID;            // dieses Gerät schließt die Phase ab (gegen doppelte Münzen)
     persist();
     renderTimer();
   }
@@ -259,8 +456,16 @@
   function tick() {
     if (!T().running) return;
     T().remaining = Math.max(0, Math.ceil((T().endAt - now()) / 1000));
-    if (T().remaining <= 0) completePhase();
-    else renderTimer();
+    if (T().remaining > 0) { renderTimer(); return; }
+    // Phase auf einem anderen Gerät gestartet? Dann schließt das andere Gerät sie ab.
+    // Erst wenn es sich 90 Sekunden lang nicht meldet, übernimmt dieses Gerät.
+    if (syncOn() && T().device && T().device !== DEVICE_ID && now() - T().endAt < 90000) {
+      renderTimer();
+      $('#modeLabel').textContent = 'Wird auf dem anderen Gerät abgeschlossen …';
+      if (!foreignWait) { foreignWait = true; setTimeout(() => { foreignWait = false; syncNow(); }, 5000); }
+      return;
+    }
+    completePhase();
   }
 
   /* ---------- Garten ---------- */
@@ -313,6 +518,7 @@
     const before = P.stageFor(p.type, p.growth);
     const wasWilted = P.plantStatus(p) === 'welk';
     p.water = Math.min(P.RULES.waterMax, Math.max(0, p.water) + P.RULES.waterAmount);
+    p.waterings = (p.waterings || 0) + 1;
     if (!wasWilted) p.growth += 1; // eine welke Pflanze muss sich erst erholen
     else toast('Deine Pflanze erholt sich wieder 💚', '');
     celebrate(i);
@@ -410,6 +616,7 @@
     const t = T();
     document.body.dataset.mode = t.mode;
     applyFocusMode();
+    syncMusic();
     $('#timeDisplay').textContent = fmtTime(t.remaining);
     $('#modeLabel').textContent = MODE_INFO[t.mode].label + (t.running ? '' : (t.remaining < t.duration ? ' · pausiert' : ''));
     const frac = t.duration ? t.remaining / t.duration : 0;
@@ -782,6 +989,7 @@
   function renderAll() {
     applyBonuses();
     renderCoins();
+    renderMusic();
     renderTodos();
     renderTimer();
     renderStats();
@@ -792,6 +1000,7 @@
   /* ---------- Einstellungen ---------- */
 
   function openSettings() {
+    renderSyncSettings();
     const f = $('#settingsForm');
     const s = state.settings;
     f.focus.value = s.focus; f.short.value = s.short; f.long.value = s.long; f.longEvery.value = s.longEvery;
@@ -883,6 +1092,15 @@
     $('#todoList').addEventListener('click', onTodoClick);
     $('#todoDoneList').addEventListener('click', onTodoClick);
 
+    document.querySelectorAll('.music-chip').forEach(b => b.addEventListener('click', () => chooseMusic(b.dataset.music)));
+    $('#musicVolume').addEventListener('input', e => {
+      state.settings.musicVolume = +e.target.value;
+      if (Music) Music.setVolume(state.settings.musicVolume / 100);
+    });
+    $('#musicVolume').addEventListener('change', persist);
+    // Browser erlauben Ton erst nach einer Nutzeraktion – danach ggf. weiterspielen
+    document.addEventListener('pointerdown', () => { if (Music) { Music.unlock(); syncMusic(); } });
+
     $('#settingsBtn').addEventListener('click', openSettings);
     // Direkt beim Klick speichern – nicht erst im 'close'-Ereignis des Dialogs,
     // das manche (eingebettete) Browser verzögert oder gar nicht auslösen.
@@ -945,8 +1163,19 @@
     });
 
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) { tick(); updatePlants(); renderGarden(); }
+      if (!document.hidden) { tick(); updatePlants(); renderGarden(); syncNow(); }
       persist();
+    });
+    window.addEventListener('online', () => syncNow());
+    $('#syncBadge').addEventListener('click', () => syncNow());
+    $('#syncConnectBtn').addEventListener('click', connectSync);
+    $('#syncToken').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); connectSync(); } });
+    $('#syncNowBtn').addEventListener('click', () => syncNow());
+    $('#syncDisconnectBtn').addEventListener('click', () => {
+      if (!confirm('Synchronisation auf diesem Gerät beenden? Der Spielstand bleibt hier und auf GitHub erhalten.')) return;
+      Sync.disconnect();
+      setSyncStatus('off');
+      renderSyncSettings();
     });
     window.addEventListener('pagehide', persist);
   }
@@ -954,14 +1183,20 @@
   /* ---------- Start ---------- */
 
   function init() {
+    // Offline-Fähigkeit & Installierbarkeit (nur über http/https, nicht bei file://)
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service Worker nicht registriert:', e));
+    }
     document.body.insertAdjacentHTML('afterbegin', P.defsSVG());
     scene = window.GardenScene.create($('#scene'), selectPlot);
     applyBonuses();
     const firstPlanted = state.plots.findIndex(Boolean);
     selected = firstPlanted >= 0 ? firstPlanted : 0;
     updatePlants();
+    lastSig = sigOf(state);
     // Wurde der Timer während die Seite geschlossen war beendet?
-    if (T().running && T().endAt && T().endAt <= now()) {
+    // Mit Synchronisation erst abgleichen (vielleicht hat ein anderes Gerät die Phase schon abgeschlossen).
+    if (T().running && T().endAt && T().endAt <= now() && !syncOn()) {
       T().remaining = 0;
       completePhase();
     } else if (T().running) {
@@ -970,8 +1205,11 @@
     persist();
     bind();
     renderAll();
-    setInterval(tick, 250);
+    renderSyncBadge();
+    if (syncOn()) syncNow().finally(() => setInterval(tick, 250));
+    else setInterval(tick, 250);
     setInterval(() => { updatePlants(); renderGarden(); persist(); }, 30 * 1000);
+    setInterval(() => { if (!document.hidden) syncNow(); }, 60 * 1000);
   }
 
   init();

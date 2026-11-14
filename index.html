@@ -2,14 +2,22 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Fokusgarten</title>
   <meta name="description" content="Fokus-Timer mit Pausen, der dich mit Münzen belohnt – damit wächst dein eigener Garten.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
+  <!-- Als App installierbar (Handy & PC) -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#3f8a3c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Fokusgarten">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=23">
+  <link rel="stylesheet" href="css/style.css?v=27">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +26,7 @@
       <span class="brand-name">Fokusgarten</span>
     </div>
     <div class="topbar-right">
+      <button type="button" class="sync-badge" id="syncBadge" hidden aria-label="Synchronisation">☁️</button>
       <span class="test-badge" id="testBadge" hidden title="Testumgebung aktiv – dein echter Spielstand bleibt unverändert">🧪 Test</span>
       <div class="coins" title="Deine Münzen" aria-live="polite">
         <span class="coin-icon" aria-hidden="true">🪙</span>
@@ -60,6 +69,23 @@
         <button class="btn btn-ghost btn-round" id="resetBtn" title="Zurücksetzen" aria-label="Zurücksetzen">↺</button>
         <button class="btn btn-primary btn-big" id="startBtn">Start</button>
         <button class="btn btn-ghost btn-round" id="skipBtn" title="Phase überspringen" aria-label="Phase überspringen">⏭</button>
+      </div>
+
+      <div class="music-bar" id="musicBar">
+        <div class="music-head">
+          <span class="music-title">🎵 Fokus-Musik</span>
+          <label class="music-volume" title="Lautstärke">
+            <span aria-hidden="true">🔉</span>
+            <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="Lautstärke der Musik">
+          </label>
+        </div>
+        <div class="music-chips" role="radiogroup" aria-label="Musikstil">
+          <button type="button" class="music-chip" role="radio" data-music="off">🔇 Aus</button>
+          <button type="button" class="music-chip" role="radio" data-music="meditativ">🧘 Meditativ</button>
+          <button type="button" class="music-chip" role="radio" data-music="techno">🎧 Techno</button>
+          <button type="button" class="music-chip" role="radio" data-music="regen">🌧️ Regen</button>
+        </div>
+        <p class="music-note" id="musicNote"></p>
       </div>
 
       <p class="timer-hint" id="timerHint"></p>
@@ -168,6 +194,30 @@
         <label class="check"><input type="checkbox" name="notify"> Desktop-Benachrichtigung</label>
       </fieldset>
 
+      <fieldset class="sync-fieldset">
+        <legend>☁️ Synchronisation</legend>
+        <p class="muted small" id="syncTestNote" hidden>In der Testumgebung ist die Synchronisation pausiert.</p>
+        <div id="syncConnectArea">
+          <p class="muted small">Gleicht deinen Spielstand automatisch zwischen Handy und PC ab. Er wird in einem geheimen Gist in deinem GitHub-Konto gespeichert.</p>
+          <ol class="sync-steps small">
+            <li><a id="syncTokenLink" target="_blank" rel="noopener">Zugangsschlüssel bei GitHub erstellen</a> – nur das Häkchen „gist“ ist nötig.</li>
+            <li>Schlüssel hier einfügen und verbinden. Auf jedem Gerät einmal.</li>
+          </ol>
+          <div class="sync-row">
+            <input type="password" id="syncToken" placeholder="ghp_… oder github_pat_…" autocomplete="off" spellcheck="false" aria-label="GitHub-Zugangsschlüssel">
+            <button type="button" class="btn btn-primary" id="syncConnectBtn">Verbinden</button>
+          </div>
+          <p class="small sync-msg" id="syncConnectMsg"></p>
+        </div>
+        <div id="syncActiveArea" hidden>
+          <p class="small" id="syncInfo"></p>
+          <div class="row-buttons">
+            <button type="button" class="btn btn-ghost" id="syncNowBtn">🔄 Jetzt abgleichen</button>
+            <button type="button" class="btn btn-ghost" id="syncDisconnectBtn">Trennen</button>
+          </div>
+        </div>
+      </fieldset>
+
       <fieldset class="test-fieldset">
         <legend>🧪 Testmodus</legend>
         <div id="testStartArea">
@@ -206,9 +256,11 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="js/plants.js?v=23"></script>
-  <script src="js/scene.js?v=23"></script>
-  <script src="js/storage.js?v=23"></script>
-  <script src="js/app.js?v=23"></script>
+  <script src="js/plants.js?v=27"></script>
+  <script src="js/scene.js?v=27"></script>
+  <script src="js/music.js?v=27"></script>
+  <script src="js/storage.js?v=27"></script>
+  <script src="js/sync.js?v=27"></script>
+  <script src="js/app.js?v=27"></script>
 </body>
 </html>
