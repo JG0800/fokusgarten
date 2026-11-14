@@ -7,6 +7,7 @@
   const $ = (sel, root = document) => root.querySelector(sel);
 
   const CYCLE_BONUS = 10;
+  const TASK_REWARD = 50;
   const MODE_INFO = {
     focus: { label: 'Fokuszeit', tab: 'Fokus' },
     short: { label: 'Kurze Pause', tab: 'Kurze Pause' },
@@ -21,6 +22,20 @@
   let selected = 0;
   const celebrateUntil = {};
   let focusModeWanted = false;
+  let bonuses = P.computeBonuses([]);
+
+  /** Boni aus der Sammlung neu berechnen und für die Pflanzenregeln aktivieren */
+  function applyBonuses() {
+    bonuses = P.computeBonuses(state.collection);
+    P.setBonuses(bonuses);
+  }
+
+  /** Münzen für eine Fokuseinheit inkl. Sammlungs-Boni (Kirschbaum %, Sonnenblume +x) */
+  function focusReward(minutes) {
+    const base = Math.round(minutes * bonuses.focusMult);
+    const extra = base - minutes + bonuses.sessionCoins;
+    return { total: base + bonuses.sessionCoins, extra };
+  }
   let statsView = 'week';
   try { statsView = localStorage.getItem('fokusgarten.statsView') || 'week'; } catch (e) { /* ignorieren */ }
 
@@ -91,6 +106,9 @@
     coinFloat(-amount);
     return true;
   }
+
+  /** Text sicher in HTML einsetzen */
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function earn(amount) {
     state.coins += amount;
@@ -197,13 +215,15 @@
       state.cycleCount += 1;
       const k = dateKey();
       state.history[k] = (state.history[k] || 0) + minutes;
-      let reward = minutes;
+      const fr = focusReward(minutes);
+      let reward = fr.total;
       const cycleDone = state.cycleCount >= state.settings.longEvery;
       if (cycleDone) reward += CYCLE_BONUS;
       earn(reward);
+      const extraTxt = fr.extra > 0 ? ` (davon ${fr.extra} 🪙 Sammlungs-Bonus)` : '';
       toast(cycleDone
-        ? `Stark! ${minutes} Minuten Fokus + Zyklus-Bonus: ${reward} 🪙. Gönn dir eine lange Pause.`
-        : `Fokuszeit geschafft! Du erhältst ${reward} 🪙.`, 'success');
+        ? `Stark! Fokus + Zyklus-Bonus: ${reward} 🪙${extraTxt}. Gönn dir eine lange Pause.`
+        : `Fokuszeit geschafft! Du erhältst ${reward} 🪙${extraTxt}.`, 'success');
       notify('Fokuszeit geschafft! 🌱', `+${reward} Münzen. Zeit für eine Pause.`);
       chime(true);
       setMode(nextModeAfterFocus());
@@ -260,6 +280,7 @@
           <strong>${t.emoji} ${t.name}</strong>
           <span class="muted small">${t.desc}</span>
           <span class="shop-meta small">Gießen: ${t.waterCost} 🪙 · Durst: ${'💧'.repeat(Math.round(t.decay / 1.3))}</span>
+          <span class="shop-meta small">🏆 Ernte: <strong>${t.harvest} 🪙</strong> + Bonus: ${P.BONUS_INFO[key].per}</span>
         </span>
         <span class="price">${t.seedCost} 🪙</span>
       </button>`).join('');
@@ -290,8 +311,8 @@
     if (!check.ok) { toast(check.reason, 'warn'); return; }
     if (!spend(P.PLANT_TYPES[p.type].waterCost)) return;
     const before = P.stageFor(p.type, p.growth);
-    const wasWilted = p.water <= 0;
-    p.water = Math.min(P.RULES.waterMax, p.water + P.RULES.waterAmount);
+    const wasWilted = P.plantStatus(p) === 'welk';
+    p.water = Math.min(P.RULES.waterMax, Math.max(0, p.water) + P.RULES.waterAmount);
     if (!wasWilted) p.growth += 1; // eine welke Pflanze muss sich erst erholen
     else toast('Deine Pflanze erholt sich wieder 💚', '');
     celebrate(i);
@@ -333,12 +354,20 @@
   function harvestPlant(i) {
     const p = state.plots[i];
     if (!p || P.stageFor(p.type, p.growth) < P.MAX_STAGE) return;
+    const t = P.PLANT_TYPES[p.type];
+    const info = P.BONUS_INFO[p.type];
+    const nBefore = bonuses.counts[p.type] || 0;
+    if (scene) scene.harvest(i, t.harvest);   // Münzen sprudeln aus der Pflanze
+    updatePlants();                       // bisherige Zeit noch mit den alten Boni abrechnen
     state.collection.push({ type: p.type, plantedAt: p.plantedAt, grownAt: now() });
     state.plots[i] = null;
-    toast(`🏆 ${P.PLANT_TYPES[p.type].name} wurde in die Sammlung aufgenommen.`, 'success');
+    applyBonuses();
+    earn(t.harvest);
+    toast(`🏆 ${t.name} geerntet: +${t.harvest} 🪙! Bonus jetzt: ${info.total(nBefore + 1)}.`, 'success');
     persist();
     renderGarden();
     renderCollection();
+    renderTimer();
   }
 
   function animatePlot(i, kind) {
@@ -401,8 +430,11 @@
     let hint;
     if (t.mode === 'focus') {
       const mins = timerMinutes(t);
+      const fr = focusReward(mins);
       const bonus = state.cycleCount + 1 >= state.settings.longEvery;
-      hint = `Diese Fokuseinheit bringt dir <strong>${mins} 🪙</strong>${bonus ? ` + <strong>${CYCLE_BONUS} 🪙</strong> Zyklus-Bonus` : ''}.`;
+      hint = `Diese Fokuseinheit bringt dir <strong>${fr.total} 🪙</strong>` +
+        (fr.extra > 0 ? ` (inkl. ${fr.extra} 🪙 Sammlungs-Bonus)` : '') +
+        (bonus ? ` + <strong>${CYCLE_BONUS} 🪙</strong> Zyklus-Bonus` : '') + '.';
     } else {
       hint = t.mode === 'long'
         ? 'Lange Pause – beweg dich, iss etwas, schau in die Ferne.'
@@ -549,6 +581,7 @@
     $('#chartCaption').innerHTML = caption;
 
     const rec = [
+      `<li><span>📝 Erledigte Aufgaben</span><strong>${(state.tasksCompleted || 0).toLocaleString('de-DE')}</strong></li>`,
       `<li><span>🔥 Serie</span><strong>${streak()} ${streak() === 1 ? 'Tag' : 'Tage'} in Folge</strong></li>`,
       `<li><span>✅ Fokuseinheiten</span><strong>${state.sessionsCompleted.toLocaleString('de-DE')}</strong></li>`
     ];
@@ -597,7 +630,7 @@
     const stage = P.stageFor(p.type, p.growth);
     const status = P.plantStatus(p);
     const grown = stage >= P.MAX_STAGE;
-    const water = Math.round(p.water);
+    const water = Math.max(0, Math.round(p.water));
     const prog = Math.round(P.stageProgress(p.type, p.growth) * 100);
     const wCheck = P.canWater(p, state.settings.testNoWait);
     const fCheck = P.canFertilize(p, t, state.settings.testNoWait);
@@ -606,7 +639,10 @@
       : grown ? '<span class="badge gold">Blüht</span>' : '<span class="badge ok">Glücklich</span>';
     let note;
     if (status === 'welk') note = 'Gieß mich, damit ich mich erhole!';
-    else if (grown) note = 'Ausgewachsen! Nimm mich in deine Sammlung auf.';
+    else if (grown) {
+      const nNow = bonuses.counts[p.type] || 0;
+      note = `Ausgewachsen! Ernte bringt <strong>${type.harvest} 🪙</strong>. Bonus danach: ${P.BONUS_INFO[p.type].total(nNow + 1)}.`;
+    }
     else note = 'Gießen: +1 Wachstum · Dünger: +' + P.RULES.fertilizerGrowth + ' Wachstum';
 
     // Wartezeiten
@@ -618,7 +654,7 @@
         : waterWait > 0 ? `<span class="wait">💧 Gießen in <strong>${dur(waterWait)}</strong></span>`
         : '<span class="wait ok">💧 Gießen jetzt möglich</span>',
       status === 'welk' ? ''
-        : status === 'durstig' ? `<span class="wait warn">⏳ Welkt in <strong>${dur(P.msUntilWater(p, 0))}</strong></span>`
+        : status === 'durstig' ? `<span class="wait warn">⏳ Welkt in <strong>${dur(P.msUntilWilt(p))}</strong></span>`
         : `<span class="wait">⏳ Durstig in <strong>${dur(P.msUntilWater(p, P.RULES.thirstyBelow))}</strong></span>`
     ];
     let growTimes;
@@ -637,7 +673,7 @@
 
     const waterBtn = `<button type="button" class="btn btn-water" data-action="water" data-i="${i}" ${wCheck.ok ? '' : 'disabled'} title="${wCheck.ok ? 'Gießen: +' + P.RULES.waterAmount + ' % Wasser, +1 Wachstum' : wCheck.reason}">💧 Gießen <span class="cost">${type.waterCost} 🪙</span></button>`;
     const actions = grown
-      ? `<button type="button" class="btn btn-gold" data-action="harvest" data-i="${i}">🏆 In die Sammlung</button>${waterBtn}`
+      ? `<button type="button" class="btn btn-gold" data-action="harvest" data-i="${i}">🏆 Ernten <span class="cost">+${type.harvest} 🪙</span></button>${waterBtn}`
       : `${waterBtn}<button type="button" class="btn btn-fert" data-action="fertilize" data-i="${i}" ${fCheck.ok ? '' : 'disabled'} title="${fCheck.ok ? 'Düngen: +' + P.RULES.fertilizerGrowth + ' Wachstum' : fCheck.reason}">🌿 Düngen <span class="cost">${P.RULES.fertilizerCost} 🪙</span></button>`;
 
     panel.innerHTML = `<div class="panel-row status-${status} ${grown ? 'grown' : ''}">
@@ -667,16 +703,86 @@
   function renderCollection() {
     const c = state.collection;
     $('#collectionCount').textContent = c.length ? `${c.length} ${c.length === 1 ? 'Pflanze' : 'Pflanzen'}` : '';
+    $('#bonusList').innerHTML = Object.entries(P.PLANT_TYPES).map(([key, t]) => {
+      const n = bonuses.counts[key] || 0;
+      const info = P.BONUS_INFO[key];
+      return `<div class="bonus ${n ? 'on' : ''}" title="${t.male ? 'Jeder' : 'Jede'} ${t.name} in der Sammlung: ${info.per} – jeweils vom aktuellen Wert">
+        <span class="bonus-head"><span>${t.emoji} ${t.name}</span><span class="bonus-count">×${n}</span></span>
+        <span class="bonus-text">${n ? info.total(n) : info.per}</span>
+        <span class="bonus-bar" title="${Math.round(info.progress(n) * 100)} % des Höchstwerts"><span style="width:${(info.progress(n) * 100).toFixed(1)}%"></span></span>
+        <span class="bonus-next">Mit der nächsten: ${info.total(n + 1)}</span>
+      </div>`;
+    }).join('');
     $('#collection').innerHTML = c.length
       ? c.slice().reverse().map(x => `
           <div class="trophy" title="${P.PLANT_TYPES[x.type].name} · ausgewachsen am ${new Date(x.grownAt).toLocaleDateString('de-DE')}">
             ${P.plantSVG(x.type, 5, 'joy')}
           </div>`).join('')
-      : '<p class="muted small empty-note">Noch leer. Lass eine Pflanze bis zur Blüte wachsen und nimm sie hier auf.</p>';
+      : '<p class="muted small empty-note">Noch leer. Lass eine Pflanze bis zur Blüte wachsen und ernte sie – das bringt Münzen und einen dauerhaften Bonus.</p>';
+  }
+
+  /* ---------- Aufgaben ---------- */
+
+  function addTodo(text) {
+    text = text.trim().replace(/\s+/g, ' ');
+    if (!text) return;
+    state.todos.push({ id: 't' + now().toString(36) + Math.random().toString(36).slice(2, 6), text, done: false, createdAt: now(), doneAt: null });
+    persist();
+    renderTodos();
+  }
+
+  function completeTodo(id) {
+    const t = state.todos.find(x => x.id === id);
+    if (!t || t.done) return;
+    t.done = true;
+    t.doneAt = now();
+    state.tasksCompleted = (state.tasksCompleted || 0) + 1;
+    earn(TASK_REWARD);
+    chime(true);
+    toast(`✅ Aufgabe erledigt: +${TASK_REWARD} 🪙`, 'success');
+    persist();
+    // kurz abgehakt zeigen, dann in „Erledigt“ verschieben
+    const li = document.querySelector(`#todoList [data-id="${id}"]`);
+    if (li) { li.classList.add('just-done'); setTimeout(renderTodos, 650); } else renderTodos();
+    renderStats();
+  }
+
+  function deleteTodo(id) {
+    const t = state.todos.find(x => x.id === id);
+    if (!t) return;
+    if (!t.done && !confirm(`Aufgabe „${t.text}“ löschen?`)) return;
+    state.todos = state.todos.filter(x => x.id !== id);
+    persist();
+    renderTodos();
+  }
+
+  function renderTodos() {
+    const open = state.todos.filter(t => !t.done);
+    const done = state.todos.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+    $('#todoCount').textContent = open.length ? `${open.length} offen` : '';
+    $('#todoEmpty').hidden = open.length > 0;
+    $('#todoList').innerHTML = open.map(t => `
+      <li class="todo-item" data-id="${t.id}">
+        <button type="button" class="todo-check" data-todo="done" aria-label="„${esc(t.text)}“ erledigen (+${TASK_REWARD} Münzen)" title="Erledigt: +${TASK_REWARD} 🪙"></button>
+        <span class="todo-text">${esc(t.text)}</span>
+        <span class="todo-reward">+${TASK_REWARD} 🪙</span>
+        <button type="button" class="todo-del" data-todo="delete" aria-label="Aufgabe löschen" title="Löschen">✕</button>
+      </li>`).join('');
+    $('#todoDoneWrap').hidden = done.length === 0;
+    $('#todoDoneSummary').textContent = `Erledigt (${done.length})`;
+    $('#todoDoneList').innerHTML = done.map(t => `
+      <li class="todo-item done" data-id="${t.id}">
+        <span class="todo-check checked" aria-hidden="true"></span>
+        <span class="todo-text">${esc(t.text)}</span>
+        <span class="todo-date muted small">${new Date(t.doneAt || t.createdAt).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}</span>
+        <button type="button" class="todo-del" data-todo="delete" aria-label="Erledigte Aufgabe entfernen" title="Entfernen">✕</button>
+      </li>`).join('');
   }
 
   function renderAll() {
+    applyBonuses();
     renderCoins();
+    renderTodos();
     renderTimer();
     renderStats();
     renderGarden();
@@ -761,12 +867,30 @@
       if (item) buySeed(item.dataset.type);
     });
 
-    $('#settingsBtn').addEventListener('click', openSettings);
-    $('#settingsDialog').addEventListener('close', () => {
-      if ($('#settingsDialog').returnValue === 'save') saveSettings();
+    $('#todoForm').addEventListener('submit', e => {
+      e.preventDefault();
+      addTodo($('#todoInput').value);
+      $('#todoInput').value = '';
+      $('#todoInput').focus();
     });
+    const onTodoClick = e => {
+      const btn = e.target.closest('[data-todo]');
+      if (!btn) return;
+      const id = btn.closest('[data-id]').dataset.id;
+      if (btn.dataset.todo === 'done') completeTodo(id);
+      else deleteTodo(id);
+    };
+    $('#todoList').addEventListener('click', onTodoClick);
+    $('#todoDoneList').addEventListener('click', onTodoClick);
+
+    $('#settingsBtn').addEventListener('click', openSettings);
+    // Direkt beim Klick speichern – nicht erst im 'close'-Ereignis des Dialogs,
+    // das manche (eingebettete) Browser verzögert oder gar nicht auslösen.
     $('#saveSettingsBtn').addEventListener('click', e => {
-      if (!$('#settingsForm').reportValidity()) e.preventDefault();
+      e.preventDefault();
+      if (!$('#settingsForm').reportValidity()) return;
+      saveSettings();
+      $('#settingsDialog').close('save');
     });
 
     $('#exportBtn').addEventListener('click', () => { SG.exportToFile(state); toast('Spielstand exportiert.', 'success'); });
@@ -779,6 +903,7 @@
         const imported = SG.importFromText(await file.text());
         if (!confirm('Aktuellen Spielstand durch die importierte Datei ersetzen?')) return;
         state = imported;
+        applyBonuses();
         state.timer.running = false; state.timer.endAt = null;
         updatePlants();
         persist();
@@ -806,6 +931,7 @@
       if (SG.isTest()) { $('#testRestartBtn').click(); return; }
       if (!confirm('Wirklich alles zurücksetzen? Münzen, Pflanzen und Statistik gehen verloren. Exportiere vorher eine Sicherung, falls du sie behalten willst.')) return;
       state = SG.defaultState();
+      applyBonuses();
       persist();
       $('#settingsDialog').close('cancel');
       renderAll();
@@ -830,6 +956,7 @@
   function init() {
     document.body.insertAdjacentHTML('afterbegin', P.defsSVG());
     scene = window.GardenScene.create($('#scene'), selectPlot);
+    applyBonuses();
     const firstPlanted = state.plots.findIndex(Boolean);
     selected = firstPlanted >= 0 ? firstPlanted : 0;
     updatePlants();

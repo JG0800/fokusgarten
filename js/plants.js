@@ -11,27 +11,27 @@
    */
   const PLANT_TYPES = {
     sonnenblume: {
-      name: 'Sonnenblume', emoji: '🌻', seedCost: 15, waterCost: 5, decay: 4,
+      name: 'Sonnenblume', emoji: '🌻', seedCost: 15, waterCost: 5, decay: 4, harvest: 30,
       thresholds: [0, 2, 5, 9, 14, 20],
       desc: 'Fröhlich und schnell – braucht aber oft Wasser.'
     },
     tulpe: {
-      name: 'Tulpe', emoji: '🌷', seedCost: 20, waterCost: 5, decay: 3,
+      name: 'Tulpe', emoji: '🌷', seedCost: 20, waterCost: 5, decay: 3, harvest: 35,
       thresholds: [0, 2, 5, 9, 14, 22],
       desc: 'Elegant und genügsam, mittleres Tempo.'
     },
     kaktus: {
-      name: 'Kaktus', male: true, emoji: '🌵', seedCost: 25, waterCost: 4, decay: 1.5,
+      name: 'Kaktus', male: true, emoji: '🌵', seedCost: 25, waterCost: 4, decay: 1.5, harvest: 35,
       thresholds: [0, 3, 7, 12, 18, 26],
       desc: 'Verzeiht lange Pausen, wächst langsam.'
     },
     kirschbaum: {
-      name: 'Kirschbaum', male: true, emoji: '🌸', seedCost: 50, waterCost: 8, decay: 2.5,
+      name: 'Kirschbaum', male: true, emoji: '🌸', seedCost: 50, waterCost: 8, decay: 2.5, harvest: 50,
       thresholds: [0, 3, 8, 15, 24, 35],
       desc: 'Die Königsdisziplin – ein Bäumchen voller Blüten.'
     },
     pilz: {
-      name: 'Pilz', male: true, type: 'pilz', emoji: '🍄', seedCost: 30, waterCost: 5, decay: 2,
+      name: 'Pilz', male: true, type: 'pilz', emoji: '🍄', seedCost: 30, waterCost: 5, decay: 2, harvest: 40,
       thresholds: [0, 2, 6, 11, 17, 24],
       desc: 'Gemütlich und treu – mag feuchte Erde und bekommt Pilzkinder.'
     }
@@ -51,6 +51,83 @@
 
   const HOUR = 3600 * 1000;
 
+  /* ---------- Sammlungs-Boni ---------- */
+
+  /*
+   * Prozentuale Boni ohne Obergrenze bei der Anzahl:
+   * Jede weitere Pflanze wirkt auf den AKTUELLEN Wert (z. B. Düngerzeit −10 % von der
+   * schon verkürzten Zeit). Dadurch nähert sich jeder Bonus einem Grenzwert, erreicht
+   * ihn aber nie – jede neue Pflanze bringt etwas, nur immer ein bisschen weniger.
+   */
+  const BONUS_RULES = {
+    sonnenblume: { step: 0.10, limit: 10 },   // bis zu +10 🪙 pro Fokuseinheit
+    tulpe: { step: 0.05 },                    // Wasserverlust −5 % vom aktuellen Wert
+    kaktus: { step: 0.10, limit: 24 },        // bis zu 24 Std. Reserve vor dem Welken
+    kirschbaum: { step: 0.10, limit: 0.5 },   // bis zu +50 % Münzen auf Fokuszeit
+    pilz: { step: 0.10 }                      // Düngerzeit −10 % vom aktuellen Wert
+  };
+  /** Anteil des Grenzwerts, der mit n Pflanzen erreicht ist (0 … <1) */
+  const reached = (type, n) => 1 - Math.pow(1 - BONUS_RULES[type].step, n);
+
+  const pct = x => `${Math.round(x * 100)} %`;
+  const hoursText = h => formatDuration(h * HOUR);
+
+  /** Wirkung bei n Pflanzen einer Art */
+  function bonusValue(type, n) {
+    const r = BONUS_RULES[type];
+    switch (type) {
+      case 'sonnenblume': return Math.round(r.limit * reached(type, n));
+      case 'tulpe': return 1 - reached(type, n);                         // Faktor auf den Wasserverlust
+      case 'kaktus': return r.limit * reached(type, n);                  // Stunden Reserve
+      case 'kirschbaum': return r.limit * reached(type, n);              // Zusatzanteil auf Fokus-Münzen
+      case 'pilz': return RULES.fertilizerCooldownH * (1 - reached(type, n)); // Stunden Düngerzeit
+    }
+    return 0;
+  }
+
+  const BONUS_INFO = {
+    sonnenblume: {
+      per: 'mehr 🪙 pro Fokuseinheit (erst +1, bis zu +10 🪙)',
+      total: n => `+${bonusValue('sonnenblume', n)} 🪙 pro Fokuseinheit`
+    },
+    tulpe: {
+      per: 'Wasserverlust aller Pflanzen −5 % (vom aktuellen Wert)',
+      total: n => `Wasserverlust −${pct(reached('tulpe', n))}`
+    },
+    kaktus: {
+      per: 'längere Wasserreserve vor dem Welken (erst 2,4 Std., bis zu 24 Std.)',
+      total: n => `${hoursText(bonusValue('kaktus', n))} Reserve vor dem Welken`
+    },
+    kirschbaum: {
+      per: 'mehr Münzen auf Fokuszeit (erst +5 %, bis zu +50 %)',
+      total: n => `+${pct(bonusValue('kirschbaum', n))} Münzen auf Fokuszeit`
+    },
+    pilz: {
+      per: 'Düngerzeit −10 % (vom aktuellen Wert)',
+      total: n => `Düngerzeit ${hoursText(bonusValue('pilz', n))} (−${pct(reached('pilz', n))})`
+    }
+  };
+  Object.keys(BONUS_INFO).forEach(k => { BONUS_INFO[k].progress = n => reached(k, n); });
+
+  /** Boni aus der Sammlung berechnen */
+  function computeBonuses(collection) {
+    const counts = {};
+    Object.keys(PLANT_TYPES).forEach(k => { counts[k] = 0; });
+    (collection || []).forEach(c => { if (c && counts[c.type] !== undefined) counts[c.type]++; });
+    return {
+      counts,
+      sessionCoins: bonusValue('sonnenblume', counts.sonnenblume),
+      decayFactor: bonusValue('tulpe', counts.tulpe),
+      graceHours: bonusValue('kaktus', counts.kaktus),
+      focusMult: 1 + bonusValue('kirschbaum', counts.kirschbaum),
+      fertCooldownH: bonusValue('pilz', counts.pilz)
+    };
+  }
+
+  let ACTIVE = null;   // aktuell wirksame Boni (wird von der App gesetzt)
+  function setBonuses(b) { ACTIVE = b; }
+  const bonus = () => ACTIVE || computeBonuses([]);
+
   function stageFor(type, growth) {
     const t = PLANT_TYPES[type].thresholds;
     let s = 0;
@@ -68,11 +145,10 @@
 
   /** Wasserverlust seit dem letzten Update anwenden (mutiert die Pflanze) */
   function applyDecay(plant, now) {
-    const type = PLANT_TYPES[plant.type];
     const hours = Math.max(0, (now - plant.lastUpdate) / HOUR);
-    // Ausgewachsene Pflanzen verlieren nur halb so viel Wasser
-    const rate = stageFor(plant.type, plant.growth) >= MAX_STAGE ? type.decay / 2 : type.decay;
-    plant.water = Math.max(0, plant.water - rate * hours);
+    const rate = decayRate(plant);
+    // Unter 0 % zehrt die Pflanze von der Wasserreserve (Kaktus-Bonus), dann welkt sie
+    plant.water = Math.max(-waterReserve(plant), plant.water - rate * hours);
     plant.lastUpdate = now;
     return plant;
   }
@@ -90,7 +166,7 @@
   }
 
   function plantStatus(plant) {
-    if (plant.water <= 0) return 'welk';
+    if (plant.water <= -waterReserve(plant) + 1e-6) return 'welk';
     if (plant.water < RULES.thirstyBelow) return 'durstig';
     return 'gesund';
   }
@@ -101,10 +177,20 @@
     return { ok: true };
   }
 
-  /** Wasserverlust pro Stunde (ausgewachsene Pflanzen: halb so viel) */
+  /** Wasserverlust pro Stunde (ausgewachsene Pflanzen: halb so viel; Tulpen-Bonus) */
   function decayRate(plant) {
-    const d = PLANT_TYPES[plant.type].decay;
+    const d = PLANT_TYPES[plant.type].decay * bonus().decayFactor;
     return stageFor(plant.type, plant.growth) >= MAX_STAGE ? d / 2 : d;
+  }
+
+  /** Wasserreserve unter 0 % (Kaktus-Bonus), in Prozentpunkten */
+  function waterReserve(plant) {
+    return decayRate(plant) * bonus().graceHours;
+  }
+
+  /** Millisekunden, bis die Pflanze welkt */
+  function msUntilWilt(plant) {
+    return msUntilWater(plant, -waterReserve(plant));
   }
 
   /** Millisekunden, bis der Wasserstand auf `level` gesunken ist */
@@ -118,13 +204,13 @@
   }
 
   function fertilizerReadyIn(plant, now) {
-    const readyAt = (plant.lastFertilized || 0) + RULES.fertilizerCooldownH * HOUR;
+    const readyAt = (plant.lastFertilized || 0) + bonus().fertCooldownH * HOUR;
     return Math.max(0, readyAt - now);
   }
 
   function canFertilize(plant, now, noWait) {
     if (stageFor(plant.type, plant.growth) >= MAX_STAGE) return { ok: false, reason: 'Schon ausgewachsen.' };
-    if (plant.water <= 0) return { ok: false, reason: 'Welke Pflanzen erst gießen.' };
+    if (plantStatus(plant) === 'welk') return { ok: false, reason: 'Welke Pflanzen erst gießen.' };
     const wait = noWait ? 0 : fertilizerReadyIn(plant, now);
     if (wait > 0) return { ok: false, reason: 'Dünger wieder in ' + formatDuration(wait) + '.' };
     return { ok: true };
@@ -469,10 +555,11 @@
     const fy = -H + W * 0.62;
     out += face(xAt(fy), fy, W * 0.74, mood);
     if (stage === 5) {
-      const tx = lean, ty = -H - 1;
+      // Blüte in eigenem Koordinatensystem: (0,0) = Ansatz auf der Kaktusspitze
+      const tx = lean, ty = -H + 2;
       let fl = '';
-      for (let i = 0; i < 7; i++) fl += `<ellipse cx="${f(tx)}" cy="${f(ty - 7)}" rx="4.5" ry="8" fill="url(#gCFlower)" stroke="${OL.flower}" stroke-width="1" transform="rotate(${i * 51} ${f(tx)} ${f(ty)})"/>`;
-      out += `<g class="head">${fl}<circle cx="${f(tx)}" cy="${f(ty)}" r="4" fill="#ffd86b"/></g>`;
+      for (let i = 0; i < 7; i++) fl += `<ellipse cx="0" cy="-10" rx="4.5" ry="8" fill="url(#gCFlower)" stroke="${OL.flower}" stroke-width="1" transform="rotate(${i * 51} 0 -3)"/>`;
+      out += `<g transform="translate(${f(tx)} ${f(ty)})"><g class="head">${fl}<circle cx="0" cy="-3" r="4" fill="#ffd86b"/></g></g>`;
     }
     return `<g transform="rotate(${w ? 9 : 0})"><g class="bob">${out}</g></g>`;
   }
@@ -618,7 +705,8 @@
   global.Plants = {
     PLANT_TYPES, STAGE_NAMES, MAX_STAGE, RULES,
     stageFor, stageProgress, applyDecay, createPlant, plantStatus, moodFor,
-    canWater, canFertilize, fertilizerReadyIn, waterReadyIn, msUntilWater, formatDuration,
+    canWater, canFertilize, fertilizerReadyIn, waterReadyIn, msUntilWater, msUntilWilt, formatDuration,
+    computeBonuses, setBonuses, BONUS_INFO, face,
     defsSVG, plantGroup, plantSVG, plantTop
   };
 })(window);

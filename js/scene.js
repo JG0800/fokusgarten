@@ -83,6 +83,8 @@
       <radialGradient id="gSun"><stop offset="0" stop-color="#fffbe0"/><stop offset=".5" stop-color="#ffe066"/><stop offset="1" stop-color="#ffb52e"/></radialGradient>
       <radialGradient id="gSunGlow"><stop offset="0" stop-color="#fff6c0" stop-opacity=".8"/><stop offset="1" stop-color="#fff6c0" stop-opacity="0"/></radialGradient>
       <linearGradient id="gCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#eef6fd"/></linearGradient>
+      <radialGradient id="gCoin" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#fff6c4"/><stop offset=".45" stop-color="#ffd23f"/><stop offset="1" stop-color="#d4900d"/></radialGradient>
+      <radialGradient id="gRainCloud" cx=".45" cy=".35" r=".7"><stop offset="0" stop-color="#ffffff"/><stop offset=".7" stop-color="#e6f0fa"/><stop offset="1" stop-color="#c9daea"/></radialGradient>
       <linearGradient id="gHillFar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fd88a"/><stop offset="1" stop-color="#6fb85f"/></linearGradient>
       <linearGradient id="gHillNear" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fc96b"/><stop offset="1" stop-color="#4f9d4a"/></linearGradient>
       <linearGradient id="gMeadow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7cc767"/><stop offset="1" stop-color="#3f8a3c"/></linearGradient>
@@ -160,6 +162,31 @@
     return out;
   }
 
+  /* ---------- Regenwolke mit Augen (Gieß-Effekt) ---------- */
+
+  function rainCloud(slotEl) {
+    // Wolke schwebt knapp über der Pflanze
+    let top = -120;
+    const plant = slotEl.querySelector('.plant');
+    if (plant) { try { top = plant.getBBox().y; } catch (e) { /* ignorieren */ } }
+    const cy = Math.max(-205, Math.min(-80, top - 44));
+    const puffs = [[-27, 5, 15], [-12, -7, 19], [9, -11, 19], [27, 1, 15], [0, 7, 18], [-20, 9, 12], [20, 9, 12]]
+      .map(([x, y, r]) => [x * 1.3, y * 1.3, r * 1.3]);
+    const circles = (fill, extra = '') => puffs.map(([x, y, r]) => `<circle cx="${x}" cy="${cy + y}" r="${r}" fill="${fill}"${extra}/>`).join('');
+    // Kontur unter alle Wölkchen, darüber die Füllung → eine weiche, zusammenhängende Wolke
+    const body = circles('#7f9cb8', ' stroke="#7f9cb8" stroke-width="5"') + circles('url(#gRainCloud)') +
+      `<ellipse cx="-16" cy="${cy - 18}" rx="12" ry="6" fill="rgba(255,255,255,.8)"/>` +
+      window.Plants.face(0, cy + 1, 31, 'joy');
+    let drops = '';
+    const fall = -(cy + 28) - 4;
+    for (let k = 0; k < 18; k++) {
+      const x = -32 + ((k * 37) % 65);
+      const delay = (0.35 + (k % 8) * 0.09 + Math.floor(k / 8) * 0.38).toFixed(2);
+      drops += `<path class="rain" d="M${x} ${cy + 24} q -4 7 0 10 q 4 -3 0 -10 Z" fill="#3d9be6" stroke="#2a7cc0" stroke-width=".8" style="--fall:${fall}px;animation-delay:${delay}s"/>`;
+    }
+    return `${drops}<g class="rain-cloud"><g class="rain-cloud-bob">${body}</g></g>`;
+  }
+
   /* ---------- Szene-Objekt ---------- */
 
   function create(container, onSelect) {
@@ -188,6 +215,7 @@
       container.innerHTML = `<svg class="scene-svg" viewBox="0 0 ${L.W} ${L.H}" preserveAspectRatio="xMidYMid meet">
         ${sceneDefs()}${background(L)}${rows}
         ${grassTufts(L, L.H - 16, Math.round(L.W / 45), 7)}
+        <g class="fx-layer" id="fxLayer"></g>
       </svg>`;
       return true;
     }
@@ -221,11 +249,7 @@
       const fx = document.createElementNS(ns, 'g');
       fx.setAttribute('class', 'fx fx-' + kind);
       if (kind === 'water') {
-        let html = `<g class="can"><path d="M-70 -150 h34 v26 h-34 Z" fill="#5aa9e6" stroke="#2f7cc0" stroke-width="2" rx="4"/><path d="M-36 -144 L -14 -156 L -12 -150 L -34 -136 Z" fill="#5aa9e6" stroke="#2f7cc0" stroke-width="2"/><path d="M-66 -150 q 12 -18 26 0" stroke="#2f7cc0" stroke-width="3" fill="none"/></g>`;
-        for (let k = 0; k < 9; k++) {
-          html += `<ellipse class="drop" cx="${-16 + (k % 5) * 8}" cy="-140" rx="2.6" ry="4.2" fill="#6fc0ff" style="animation-delay:${(k * 0.09).toFixed(2)}s"/>`;
-        }
-        fx.innerHTML = html;
+        fx.innerHTML = rainCloud(el);
       } else {
         let html = '';
         for (let k = 0; k < 6; k++) {
@@ -234,7 +258,7 @@
         fx.innerHTML = html;
       }
       el.appendChild(fx);
-      setTimeout(() => fx.remove(), 1800);
+      setTimeout(() => fx.remove(), 2400);
     }
 
     container.addEventListener('click', e => {
@@ -252,9 +276,51 @@
     });
     ro.observe(container);
 
+    /**
+     * Ernte: Die Pflanze springt aus dem Beet, Münzen sprudeln heraus und der
+     * Münzwert erscheint über ihr. Muss VOR dem Entfernen der Pflanze aufgerufen werden.
+     */
+    function harvest(i, amount) {
+      const slot = container.querySelector(`#slot-${i}`);
+      const layer = container.querySelector('#fxLayer');
+      if (!slot || !layer) return;
+      const plant = slot.querySelector('.plant');
+      let top = -100;
+      if (plant) { try { top = plant.getBBox().y; } catch (e) { /* ignorieren */ } }
+      const mid = top * 0.55;
+      const ns = 'http://www.w3.org/2000/svg';
+      const fx = document.createElementNS(ns, 'g');
+      fx.setAttribute('class', 'fx fx-harvest');
+      fx.setAttribute('transform', slot.getAttribute('transform'));
+      // Pflanze als „Geist“, der kurz hochspringt und verschwindet
+      let html = plant ? `<g class="harvest-ghost">${plant.outerHTML}</g>` : '';
+      // Münzen in alle Richtungen nach oben
+      const n = 10;
+      for (let k = 0; k < n; k++) {
+        const a = (-160 + (140 / (n - 1)) * k) * Math.PI / 180;   // Fächer nach oben
+        const dist = 55 + (k % 3) * 18;
+        const dx = Math.cos(a) * dist, dy = Math.sin(a) * dist - 10;
+        html += `<g class="coin-pop" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;animation-delay:${(k * 0.035).toFixed(3)}s">
+          <g transform="translate(0 ${mid.toFixed(1)})"><g class="coin-spin" style="animation-delay:${(k * 0.07).toFixed(2)}s">
+            <circle r="8" fill="url(#gCoin)" stroke="#a86e00" stroke-width="1.4"/>
+            <circle r="5.2" fill="none" stroke="rgba(160,100,0,.45)" stroke-width="1"/>
+            <path d="M-1.5 -3.2 v6.4 M1.5 -3.2 v6.4" stroke="rgba(160,100,0,.55)" stroke-width="1.1" stroke-linecap="round"/>
+            <circle cx="-3" cy="-3.2" r="1.6" fill="#fff" opacity=".8"/>
+          </g></g></g>`;
+      }
+      // Münzwert über der Pflanze
+      html += `<g class="harvest-amount" style="--y:${(top - 26).toFixed(1)}px">
+        <text x="0" y="0" text-anchor="middle" font-size="26" font-weight="900" font-family="Nunito, system-ui, sans-serif"
+          fill="#ffd23f" stroke="#7a4b00" stroke-width="2.4" paint-order="stroke" stroke-linejoin="round">+${amount} 🪙</text></g>`;
+      fx.innerHTML = html;
+      layer.appendChild(fx);
+      setTimeout(() => fx.remove(), 2400);
+    }
+
     return {
       update(infos, selected) { lastInfos = infos; lastSel = selected; update(infos, selected); },
-      effect
+      effect,
+      harvest
     };
   }
 

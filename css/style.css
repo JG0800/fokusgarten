@@ -111,27 +111,26 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 
 /* ---------- Layout ---------- */
 
+/* Zwei unabhängige Spalten: links Timer, Statistik, Aufgaben – rechts Garten und Sammlung.
+   Im Fokusmodus stehen Timer und Aufgaben nebeneinander (siehe unten).
+   So entstehen keine Lücken, wenn eine Spalte höher ist als die andere. */
 .layout {
   max-width: 1180px; margin: 0 auto; padding: 14px 20px 40px;
   display: grid; gap: 18px;
-  grid-template-columns: minmax(300px, 380px) 1fr;
-  grid-template-areas:
-    "timer garden"
-    "stats garden"
-    "stats collection";
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   align-items: start;
 }
-.timer-card { grid-area: timer; }
-.stats-card { grid-area: stats; }
-.garden-card { grid-area: garden; }
-.collection-card { grid-area: collection; }
+.col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 
 @media (max-width: 860px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "timer" "garden" "stats" "collection";
-    padding: 10px 16px 32px;
-  }
+  .layout { grid-template-columns: minmax(0, 1fr); padding: 10px 16px 32px; }
+  /* Auf dem Handy: eine Spalte in sinnvoller Reihenfolge */
+  .col { display: contents; }
+  .timer-card { order: 1; }
+  .garden-card { order: 2; }
+  .stats-card { order: 3; }
+  .todo-card { order: 4; }
+  .collection-card { order: 5; }
   .topbar { padding: 14px 16px 4px; }
 }
 
@@ -262,8 +261,11 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 @keyframes glow { from { transform: scale(.92); opacity: .8; } to { transform: scale(1.08); opacity: 1; } }
 
 /* Wind: Pflanzen wiegen sich vom Boden aus */
+/* Alle Pflanzen-Bewegungen drehen/stauchen um den lokalen Nullpunkt:
+   bei .sway/.bob ist das der Fuß der Pflanze, bei .head der Ansatz am Stängel.
+   So bleiben Kopf und Halm immer verbunden (kein Spalt). */
 .sway {
-  transform-box: fill-box; transform-origin: 50% 100%;
+  transform-box: view-box; transform-origin: 0 0;
   animation: sway var(--sway-dur, 3.6s) ease-in-out var(--sway-delay, 0s) infinite alternate;
 }
 @keyframes sway {
@@ -271,7 +273,7 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
   to   { transform: rotate(var(--amp, 3deg)) skewX(calc(var(--amp, 3deg) * -.4)); }
 }
 .head {
-  transform-box: fill-box; transform-origin: 50% 100%;
+  transform-box: view-box; transform-origin: 0 0;
   animation: nod calc(var(--sway-dur, 3.6s) * .8) ease-in-out var(--sway-delay, 0s) infinite alternate;
 }
 .crown { animation-name: rustle; }
@@ -287,7 +289,7 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 
 /* Lebendig: wippen (Squash & Stretch) und umherschauen */
 .bob {
-  transform-box: fill-box; transform-origin: 50% 100%;
+  transform-box: view-box; transform-origin: 0 0;
   animation: bob var(--bob-dur, 1.5s) ease-in-out var(--sway-delay, 0s) infinite alternate;
 }
 @keyframes bob { from { transform: scale(.97, 1.04); } to { transform: scale(1.04, .96); } }
@@ -333,10 +335,44 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 800; }
 @keyframes pop { 0% { transform: scale(.8); } 55% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
 /* Gießkanne & Tropfen */
-.fx-water .can { animation: can 1.5s ease forwards; transform-box: fill-box; transform-origin: 100% 0; }
-@keyframes can { 0% { opacity: 0; transform: rotate(0); } 15% { opacity: 1; } 30%, 75% { transform: rotate(25deg); opacity: 1; } 100% { opacity: 0; transform: rotate(0); } }
-.fx-water .drop { opacity: 0; animation: drop 1s ease-in .3s forwards; }
-@keyframes drop { 0% { opacity: 0; transform: translateY(0); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateY(130px); } }
+.rain-cloud { animation: cloud-visit 2.2s ease-in-out forwards; }
+@keyframes cloud-visit {
+  0% { opacity: 0; transform: translate(-40px, -10px); }
+  18% { opacity: 1; transform: translate(0, 0); }
+  80% { opacity: 1; transform: translate(4px, 0); }
+  100% { opacity: 0; transform: translate(40px, -12px); }
+}
+.rain-cloud-bob { transform-box: fill-box; transform-origin: 50% 50%; animation: cloud-squish .45s ease-in-out .3s 4 alternate; }
+@keyframes cloud-squish { from { transform: scale(1, 1); } to { transform: scale(1.06, .94); } }
+.fx-water .rain { opacity: 0; animation: rain-fall .62s ease-in 2 both; }
+@keyframes rain-fall { 0% { opacity: 0; transform: translateY(0); } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(var(--fall, 100px)); } }
+/* Ernte: Pflanze springt heraus, Münzen sprudeln, Münzwert steigt auf */
+.fx-layer, .fx-layer * { pointer-events: none; }
+.harvest-ghost { transform-box: view-box; transform-origin: 0 0; animation: ghost-out .55s ease-in forwards; }
+.harvest-ghost .sway, .harvest-ghost .head, .harvest-ghost .bob { animation: none; }
+@keyframes ghost-out {
+  0% { transform: scale(1, 1); opacity: 1; }
+  35% { transform: translateY(-10px) scale(1.12, .92); opacity: 1; }
+  100% { transform: translateY(-34px) scale(.2, .2); opacity: 0; }
+}
+.coin-pop { opacity: 0; animation: coin-pop 1.15s cubic-bezier(.2,.7,.3,1) .12s forwards; }
+@keyframes coin-pop {
+  0% { opacity: 0; transform: translate(0, 0) scale(.4); }
+  12% { opacity: 1; transform: translate(calc(var(--dx) * .25), calc(var(--dy) * .35)) scale(1.1); }
+  55% { opacity: 1; transform: translate(calc(var(--dx) * .8), var(--dy)) scale(1); }
+  100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 46px)) scale(.85); }
+}
+.coin-spin { transform-box: fill-box; transform-origin: center; animation: coin-spin .32s linear infinite alternate; }
+@keyframes coin-spin { from { transform: scaleX(1); } to { transform: scaleX(.25); } }
+.harvest-amount { opacity: 0; animation: amount-rise 1.9s ease-out .15s forwards; }
+@keyframes amount-rise {
+  0% { opacity: 0; transform: translateY(calc(var(--y) + 18px)) scale(.6); }
+  15% { opacity: 1; transform: translateY(var(--y)) scale(1.15); }
+  25% { transform: translateY(var(--y)) scale(1); }
+  75% { opacity: 1; transform: translateY(calc(var(--y) - 16px)); }
+  100% { opacity: 0; transform: translateY(calc(var(--y) - 30px)); }
+}
+
 .spark { opacity: 0; animation: spark 1.4s ease-out forwards; }
 @keyframes spark { 0% { opacity: 0; transform: translateY(10px) scale(.5); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-40px) scale(1.2); } }
 
@@ -396,9 +432,10 @@ body.focus-mode .garden-card,
 body.focus-mode .stats-card,
 body.focus-mode .collection-card { display: none; }
 
+/* Fokusmodus: Timer und Aufgaben nebeneinander, Rest ausgeblendet */
+body.focus-mode .col { display: contents; }
 body.focus-mode .layout {
-  grid-template-columns: minmax(0, 520px);
-  grid-template-areas: "timer";
+  grid-template-columns: minmax(300px, 440px) minmax(0, 480px);
   justify-content: center;
   padding-top: 4vh;
 }
@@ -406,6 +443,12 @@ body.focus-mode .timer-card { padding: 28px 24px 26px; }
 body.focus-mode .ring-wrap { width: min(340px, 78vw); }
 body.focus-mode .time { font-size: clamp(3.2rem, 15vw, 4.6rem); }
 body.focus-mode .focus-note { display: block; }
+@media (max-width: 860px) {
+  body.focus-mode .layout { grid-template-columns: minmax(0, 1fr); }
+}
+/* Lange Aufgabenlisten scrollen innerhalb der Karte */
+.todo-card .todo-list:not(.done) { max-height: 330px; overflow-y: auto; }
+body.focus-mode .todo-card .todo-list:not(.done) { max-height: 52vh; }
 
 .timer-card { view-transition-name: timer-card; }
 .topbar { view-transition-name: topbar; }
@@ -415,6 +458,67 @@ body.focus-mode .focus-note { display: block; }
 /* ---------- Sammlung ---------- */
 
 .collection { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Aufgaben ---------- */
+
+.todo-form { display: flex; gap: 8px; margin: 2px 0 10px; }
+.todo-form input {
+  flex: 1; min-width: 0; font: inherit; padding: 9px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
+.todo-form input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.todo-form .btn { width: 42px; padding: 0; font-size: 1.3rem; }
+
+.todo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.todo-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 12px;
+  background: var(--bg); border: 1px solid var(--line); transition: opacity .4s, transform .4s;
+}
+.todo-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.todo-reward { font-size: .76rem; font-weight: 800; color: color-mix(in srgb, var(--gold) 70%, var(--text)); white-space: nowrap; opacity: .8; }
+.todo-check {
+  flex: none; width: 24px; height: 24px; border-radius: 50%; padding: 0; cursor: pointer;
+  border: 2px solid color-mix(in srgb, var(--accent) 60%, var(--line)); background: var(--card);
+  display: grid; place-items: center; transition: background .2s, transform .15s;
+}
+.todo-check:hover { background: var(--accent-soft); transform: scale(1.08); }
+.todo-check:hover::after, .todo-check.checked::after, .just-done .todo-check::after { content: '✓'; font-weight: 900; font-size: .85rem; color: var(--accent); }
+.todo-check.checked, .just-done .todo-check { background: var(--accent); border-color: var(--accent); cursor: default; }
+.todo-check.checked::after, .just-done .todo-check::after { color: var(--accent-ink); }
+.todo-del {
+  flex: none; border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  width: 28px; height: 28px; border-radius: 8px; opacity: .55;
+}
+.todo-del:hover { opacity: 1; background: var(--bg-2); color: var(--danger); }
+.todo-item.just-done { opacity: .5; transform: translateX(6px); }
+.todo-item.just-done .todo-text { text-decoration: line-through; }
+.todo-empty { margin: 4px 0 0; }
+.todo-empty[hidden] { display: none; }
+
+.todo-done { margin-top: 12px; }
+.todo-done[hidden] { display: none; }
+.todo-done summary { cursor: pointer; color: var(--muted); font-weight: 700; font-size: .86rem; margin-bottom: 8px; }
+.todo-list.done .todo-item { background: transparent; }
+.todo-list.done .todo-text { text-decoration: line-through; color: var(--muted); }
+
+body.focus-mode .todo-card { padding: 18px 20px; }
+
+/* Sammlungs-Boni */
+.bonus-intro { margin: 2px 0 10px; }
+.bonus-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.bonus {
+  display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border-radius: 12px;
+  background: var(--bg-2); border: 1px solid transparent; opacity: .75;
+}
+.bonus.on { opacity: 1; background: color-mix(in srgb, var(--gold) 12%, var(--card)); border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
+.bonus-head { display: flex; justify-content: space-between; gap: 6px; font-weight: 800; font-size: .86rem; }
+.bonus-count { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
+.bonus.on .bonus-count { color: color-mix(in srgb, var(--gold) 70%, var(--text)); }
+.bonus-text { font-size: .78rem; color: var(--muted); }
+.bonus.on .bonus-text { color: var(--text); font-weight: 700; }
+.bonus-bar { height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--text) 8%, transparent); overflow: hidden; margin-top: 2px; }
+.bonus-bar span { display: block; height: 100%; background: var(--gold); border-radius: 99px; }
+.bonus-next { font-size: .72rem; color: var(--muted); margin-top: 1px; }
 .trophy {
   width: 64px; height: 76px; background: var(--bg-2); border-radius: 12px; padding: 4px;
   display: flex; justify-content: center;

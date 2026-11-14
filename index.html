@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=12">
+  <link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
   <header class="topbar">
@@ -33,6 +33,7 @@
   </div>
 
   <main class="layout">
+    <div class="col col-left">
     <!-- Timer -->
     <section class="card timer-card" aria-labelledby="timerHeading">
       <h2 id="timerHeading" class="visually-hidden">Timer</h2>
@@ -86,6 +87,27 @@
       <ul class="records small" id="records"></ul>
     </section>
 
+    <!-- Aufgaben -->
+    <section class="card todo-card" aria-labelledby="todoHeading">
+      <div class="card-head">
+        <h2 id="todoHeading">Aufgaben</h2>
+        <span class="muted small" id="todoCount"></span>
+      </div>
+      <form class="todo-form" id="todoForm" autocomplete="off">
+        <input type="text" id="todoInput" maxlength="200" placeholder="Neue Aufgabe eingeben …" aria-label="Neue Aufgabe">
+        <button type="submit" class="btn btn-primary" aria-label="Aufgabe hinzufügen">+</button>
+      </form>
+      <ul class="todo-list" id="todoList"></ul>
+      <p class="todo-empty muted small" id="todoEmpty">Noch keine offenen Aufgaben. Jede erledigte Aufgabe bringt <strong>50 🪙</strong>.</p>
+      <details class="todo-done" id="todoDoneWrap">
+        <summary id="todoDoneSummary">Erledigt</summary>
+        <ul class="todo-list done" id="todoDoneList"></ul>
+      </details>
+    </section>
+
+    </div>
+
+    <div class="col col-right">
     <!-- Garten -->
     <section class="card garden-card" aria-labelledby="gardenHeading">
       <div class="card-head">
@@ -102,8 +124,11 @@
         <h2 id="collectionHeading">Sammlung</h2>
         <span class="muted small" id="collectionCount"></span>
       </div>
+      <p class="muted small bonus-intro">Jede geerntete Pflanze bringt Münzen und verstärkt dauerhaft den Bonus ihrer Art – jede weitere etwas weniger, aber immer noch spürbar:</p>
+      <div class="bonus-list" id="bonusList"></div>
       <div class="collection" id="collection"></div>
     </section>
+    </div>
   </main>
 
   <!-- Samen-Shop -->
@@ -181,9 +206,9 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="js/plants.js?v=12"></script>
-  <script src="js/scene.js?v=12"></script>
-  <script src="js/storage.js?v=12"></script>
-  <script src="js/app.js?v=12"></script>
+  <script src="js/plants.js?v=23"></script>
+  <script src="js/scene.js?v=23"></script>
+  <script src="js/storage.js?v=23"></script>
+  <script src="js/app.js?v=23"></script>
 </body>
 </html>

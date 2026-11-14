@@ -29,7 +29,9 @@
       timer: { mode: 'focus', duration: 25 * 60, remaining: 25 * 60, running: false, endAt: null },
       plots: [null, null, null, null, null, null],
       collection: [],
-      history: {}             // 'YYYY-MM-DD' -> Fokusminuten
+      history: {},            // 'YYYY-MM-DD' -> Fokusminuten
+      todos: [],              // Aufgaben: { id, text, done, createdAt, doneAt }
+      tasksCompleted: 0
     };
   }
 
@@ -45,7 +47,13 @@
     const plots = Array.isArray(raw.plots) ? raw.plots.slice(0, d.plots.length) : [];
     while (plots.length < d.plots.length) plots.push(null);
     s.plots = plots.map(p => (p && global.Plants.PLANT_TYPES[p.type]) ? p : null);
-    ['coins', 'totalEarned', 'totalFocusMinutes', 'sessionsCompleted', 'cycleCount'].forEach(k => {
+    s.todos = Array.isArray(raw.todos)
+      ? raw.todos.filter(t => t && typeof t.text === 'string').map(t => ({
+          id: String(t.id || ('t' + Math.random().toString(36).slice(2))), text: t.text.slice(0, 200),
+          done: !!t.done, createdAt: +t.createdAt || Date.now(), doneAt: t.doneAt ? +t.doneAt : null
+        }))
+      : [];
+    ['coins', 'totalEarned', 'totalFocusMinutes', 'sessionsCompleted', 'cycleCount', 'tasksCompleted'].forEach(k => {
       s[k] = Number.isFinite(+s[k]) ? Math.max(0, Math.floor(+s[k])) : 0;
     });
     s.version = SAVE_VERSION;
